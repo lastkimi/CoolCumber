@@ -64,11 +64,16 @@ class RogueEradicatorEngine: ObservableObject {
     }
     
     func uninstall(item: RogueItem) {
-        guard let proxy = DaemonManager.shared.connect() else {
+        guard let proxy = DaemonManager.shared.connect(errorHandler: { error in
+            DispatchQueue.main.async {
+                self.uninstallResult = "XPC Error: \(error.localizedDescription)"
+            }
+        }) else {
             self.uninstallResult = "Failed to connect to Daemon"
             return
         }
         
+        // Pass the item.label so we can bootout by label, and item.path to delete the plist
         proxy.disableLaunchAgent(plistPath: item.path) { success, message in
             DispatchQueue.main.async {
                 if success {

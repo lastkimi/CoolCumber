@@ -100,7 +100,9 @@ class DaemonManager: ObservableObject {
             DispatchQueue.main.async {
                 self.thermalStatus = "XPC Error: \(error.localizedDescription)"
             }
-            errorHandler?(error)
+            if let customHandler = errorHandler {
+                customHandler(error)
+            }
         } as? CoolCumberDaemonProtocol
     }
     
@@ -207,7 +209,7 @@ class DaemonManager: ObservableObject {
     }
     
     func purgeMemory(completion: @escaping (Bool, String?) -> Void) {
-        guard let proxy = connect() else {
+        guard let proxy = connect(errorHandler: { error in completion(false, error.localizedDescription) }) else {
             completion(false, "Daemon Offline")
             return
         }
@@ -239,7 +241,7 @@ class DaemonManager: ObservableObject {
     }
     
     func runMaintenance(type: String, completion: @escaping (Bool, String?) -> Void) {
-        guard let proxy = connect() else {
+        guard let proxy = connect(errorHandler: { error in completion(false, error.localizedDescription) }) else {
             completion(false, "Daemon Offline")
             return
         }

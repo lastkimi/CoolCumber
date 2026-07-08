@@ -223,12 +223,20 @@ struct SystemOptimizerView: View {
                     }
                     .buttonStyle(.bordered)
                     
-                    Button(lang.tr("uninstall")) {
+                    Button(action: {
                         rogue.uninstall(item: item)
                         itemToUninstall = nil
+                    }) {
+                        Text(lang.tr("uninstall"))
+                            .font(DesignSystem.Typography.headline)
+                            .frame(minWidth: 80, minHeight: 28)
+                            .padding(.horizontal, DesignSystem.Spacing.normal)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(DesignSystem.Colors.statusCritical)
+                    .background(DesignSystem.Colors.statusCritical)
+                    .foregroundColor(DesignSystem.Colors.textInverse)
+                    .cornerRadius(DesignSystem.Corners.smallButton)
+                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
                 }
             }
             .padding(DesignSystem.Spacing.pageMargin)
@@ -405,6 +413,16 @@ struct SystemOptimizerView: View {
                     .foregroundColor(DesignSystem.Colors.textSecondary)
             }
             
+            if let result = rogue.uninstallResult {
+                Text(result)
+                    .font(DesignSystem.Typography.headline)
+                    .foregroundColor(result.contains("Error") || result.contains("Failed") ? DesignSystem.Colors.statusCritical : DesignSystem.Colors.statusHealthy)
+                    .padding(DesignSystem.Spacing.normal)
+                    .background((result.contains("Error") || result.contains("Failed") ? DesignSystem.Colors.statusCritical : DesignSystem.Colors.statusHealthy).opacity(0.12))
+                    .cornerRadius(DesignSystem.Corners.normal)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            
             if rogue.items.isEmpty {
                 VStack(spacing: DesignSystem.Spacing.normal) {
                     Image(systemName: "shield.checkered")
@@ -524,14 +542,22 @@ struct SystemOptimizerView: View {
             Spacer()
             
             Button(action: action) {
-                if isRunning.wrappedValue {
-                    ProgressView().scaleEffect(0.8)
-                } else {
-                    Text(lang.tr("run"))
-                        .font(DesignSystem.Typography.headline)
+                Group {
+                    if isRunning.wrappedValue {
+                        ProgressView().scaleEffect(0.8)
+                            .frame(width: 80, height: 28)
+                    } else {
+                        Text(lang.tr("run"))
+                            .font(DesignSystem.Typography.headline)
+                            .frame(width: 80, height: 28)
+                    }
                 }
+                .background(isRunning.wrappedValue ? DesignSystem.Colors.glassBg : DesignSystem.Colors.accentBrand)
+                .foregroundColor(isRunning.wrappedValue ? DesignSystem.Colors.textSecondary : DesignSystem.Colors.textInverse)
+                .cornerRadius(DesignSystem.Corners.smallButton)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
             .disabled(isRunning.wrappedValue)
         }
         .padding(DesignSystem.Spacing.comfortable)
