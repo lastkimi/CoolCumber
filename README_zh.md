@@ -4,11 +4,19 @@
 
 **CoolCumber** 是一款智能、美观且由 AI 驱动的 Mac 散热与系统优化工具。它诞生于保持 macOS 始终冷静高效的需求，拥有炫酷的 3D 交互界面，并集成了后台进程管理、温度监控与垃圾清理功能。
 
+<p align="center">
+  <img src="docs/images/app_screenshot.jpg" alt="CoolCumber UI" width="700">
+</p>
+
 ---
 
 ## 🌟 特色功能
 
 ### 🌡️ 极客级温度与电源监控
+<p align="center">
+  <img src="docs/images/widget_screenshot.jpg" alt="CoolCumber Widget" width="300" align="right" style="margin-left: 20px;">
+</p>
+
 - **实时看板**：炫酷的 3D UI 实时展示 CPU 温度、内存占用及电池状态。
 - **历史曲线**：直观的 CPU 散热与负载历史折线图，精确显示 40°C～95°C 区间的温度波动变化，助您一目了然地掌握系统热流分布。
 

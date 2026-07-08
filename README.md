@@ -4,11 +4,19 @@
 
 **CoolCumber** is an intelligent, sleek, and AI-driven Mac cooling and system optimization tool. Born out of the necessity to keep your macOS running cool and efficient, it features a stunning 3D interactive interface, background process management, thermal monitoring, and deep junk cleanup capabilities.
 
+<p align="center">
+  <img src="docs/images/app_screenshot.jpg" alt="CoolCumber UI" width="700">
+</p>
+
 ---
 
 ## 🌟 Key Features
 
 ### 🌡️ Geek-Grade Thermal & Power Monitoring
+<p align="center">
+  <img src="docs/images/widget_screenshot.jpg" alt="CoolCumber Widget" width="300" align="right" style="margin-left: 20px;">
+</p>
+
 - **Real-time Dashboard**: A stunning 3D UI that displays real-time CPU temperature, memory usage, and battery power.
 - **Historical Trends**: Intuitive CPU thermal and load history graphs that accurately map temperature fluctuations in the 40°C to 95°C range, helping you understand your system's heat dissipation at a glance.
 
