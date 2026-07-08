@@ -1,57 +1,65 @@
 # CoolCumber 🥒
 
-[English](#english) | [中文](#中文)
+**English** | [中文](README_zh.md)
+
+**CoolCumber** is an intelligent, sleek, and AI-driven Mac cooling and system optimization tool. Born out of the necessity to keep your macOS running cool and efficient, it features a stunning 3D interactive interface, background process management, thermal monitoring, and deep junk cleanup capabilities.
 
 ---
 
-<a name="english"></a>
-## English
+## 🌟 Key Features
 
-**CoolCumber** is an intelligent, sleek, and AI-driven Mac cooling and system optimization tool. Born out of the necessity to keep your macOS running cool and efficient, it features a stunning 3D interface, background process management, and junk cleanup capabilities. 
+### 🌡️ Geek-Grade Thermal & Power Monitoring
+- **Real-time Dashboard**: A stunning 3D UI that displays real-time CPU temperature, memory usage, and battery power.
+- **Historical Trends**: Intuitive CPU thermal and load history graphs that accurately map temperature fluctuations in the 40°C to 95°C range, helping you understand your system's heat dissipation at a glance.
 
-### Features
-- **Thermal & Power Monitoring**: Real-time tracking of CPU temperature, memory usage, and battery power.
-- **Rogue App Killer**: Detects and terminates processes that consume excessive CPU and memory in the background.
-- **System Optimizer**: Cleans up cache, temporary files, and system junk to free up valuable storage space.
-- **Agentic Studio Built**: Developed primarily with the help of Google Antigravity AI agents, demonstrating the power of agentic coding.
-- **Bilingual Support**: Fully localized in English and Chinese.
+### 🛡️ Rogue App Killer
+- **Silent Guardian**: Intelligently detects and analyzes background processes that consume excessive CPU and memory without your knowledge.
+- **One-Click Freeze**: Instantly terminate stubborn resource-hogging background applications to cool down your system immediately.
 
-### Installation
-Go to the [Releases](https://github.com/lastkimi/CoolCumber/releases) page and download the latest `CoolCumber.dmg`.
+### 🧹 Deep System Optimizer
+- **Comprehensive Scan**: Deeply scans your macOS for application caches, temporary files, and useless log remnants.
+- **One-Click Cleanup**: Free up valuable disk storage space and keep your system running light and fast.
 
-### Build from Source
-If you want to build this project yourself, you will need [XcodeGen](https://github.com/yonaskolb/XcodeGen):
-1. Clone the repository: `git clone https://github.com/lastkimi/CoolCumber.git`
-2. Navigate to the project directory: `cd CoolCumber`
-3. Generate the Xcode project: `xcodegen generate`
-4. Open the generated project and build via Xcode.
-
-### License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+### 🤖 Built by Agentic Studio
+The core codebase of this project was primarily developed autonomously by Google Antigravity AI agents. From low-level system API integrations to highly customized 3D frontend animations, it demonstrates the phenomenal power of Agentic Coding in modern software engineering.
 
 ---
 
-<a name="中文"></a>
-## 中文
+## 🚀 Quick Start Tutorial
 
-**CoolCumber** 是一款智能、美观且由 AI 驱动的 Mac 散热与系统优化工具。它诞生于保持 macOS 始终冷静高效的需求，拥有炫酷的 3D 交互界面，并集成了后台进程管理与垃圾清理功能。
+### 1. Installation
+1. Go to the [Releases page](https://github.com/lastkimi/CoolCumber/releases) and download the latest `CoolCumber.dmg`.
+2. Double-click the downloaded `.dmg` file and drag `CoolCumber` into your **Applications** folder.
+3. Open CoolCumber from Launchpad. On first launch, macOS may prompt you to grant necessary permissions (such as Full Disk Access or Accessibility permissions). Please allow these in System Preferences so the app can correctly read thermal sensors and clear system caches.
 
-### 核心功能
-- **温度与电源监控**：实时追踪 CPU 温度、内存占用及电池状态。
-- **流氓应用杀手**：智能检测并在后台自动终止过度消耗 CPU 和内存的流氓进程。
-- **系统优化器**：清理应用缓存、临时文件和系统垃圾，释放宝贵的存储空间。
-- **Agentic Studio 打造**：本项目核心代码主要由 Google Antigravity 智能体协助开发完成，展示了 Agentic Coding 的强大威力。
-- **多语言支持**：全面支持中文和英文。
+### 2. User Guide
+- **Check Status**: Click the snowflake/fan icon in your Mac's menu bar to expand the beautiful floating dashboard and view real-time percentages and temperatures for CPU, RAM, and Battery.
+- **Clean Junk**: Switch to the "System Optimizer" tab, click **Scan**, wait a few seconds for the analysis to complete, and then click **Clean** to free up space.
+- **Manage Processes**: Switch to the "App Freezer" tab to monitor current high-load background applications. Terminate any rogue apps you don't need with a single click.
+- **Language Toggle**: You can freely switch between English and Chinese in the Settings panel for a native localization experience.
 
-### 安装方法
-请前往 [Releases](https://github.com/lastkimi/CoolCumber/releases) 页面，下载最新的 `CoolCumber.dmg` 文件即可安装使用。
+---
 
-### 从源码编译
-如果您希望自行编译该项目，您需要先安装 [XcodeGen](https://github.com/yonaskolb/XcodeGen)：
-1. 克隆仓库：`git clone https://github.com/lastkimi/CoolCumber.git`
-2. 进入项目目录：`cd CoolCumber`
-3. 生成 Xcode 项目：`xcodegen generate`
-4. 打开生成的项目文件，通过 Xcode 进行编译。
+## 🛠️ Build from Source
 
-### 开源协议
-本项目采用 MIT 开源协议 - 详情请参阅 [LICENSE](LICENSE) 文件。
+If you want to contribute or build this project yourself, you will need to install [XcodeGen](https://github.com/yonaskolb/XcodeGen) (or install via Homebrew: `brew install xcodegen`).
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/lastkimi/CoolCumber.git
+   ```
+2. **Navigate to the project directory**:
+   ```bash
+   cd CoolCumber
+   ```
+3. **Generate the Xcode project**:
+   ```bash
+   xcodegen generate
+   ```
+4. **Compile & Run**:
+   Open the generated `.xcodeproj` file and build it using Xcode on your Mac.
+
+---
+
+## 📄 License
+This project is licensed under the **MIT License**. You are free to use, modify, and distribute this software. See the [LICENSE](LICENSE) file for details.
