@@ -87,9 +87,12 @@ targets:
     info:
       path: ThermFlowWidget/Info.plist
       properties:
+        CFBundleDisplayName: "CoolCumber Widget"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       PRODUCT_NAME: CoolCumberWidget
       PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber.CoolCumberWidget
+      ENABLE_APP_SANDBOX: YES
+      CODE_SIGN_ENTITLEMENTS: ThermFlowWidget/Widget.entitlements
       SKIP_INSTALL: YES
