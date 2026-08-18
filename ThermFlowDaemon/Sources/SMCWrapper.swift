@@ -21,16 +21,21 @@ public struct SMCKeyInfoData_keyInfo_t {
     public var dataSize: UInt32 = 0
     public var dataType: UInt32 = 0
     public var dataAttributes: UInt8 = 0
+    public var pad1: UInt8 = 0
+    public var pad2: UInt8 = 0
+    public var pad3: UInt8 = 0
 }
 
 public struct SMCParamStruct {
     public var key: UInt32 = 0
     public var vers = SMCKeyInfoData_vers_t()
+    public var pad1: UInt16 = 0
     public var pLimitData = SMCKeyInfoData_pLimitData_t()
     public var keyInfo = SMCKeyInfoData_keyInfo_t()
     public var result: UInt8 = 0
     public var status: UInt8 = 0
     public var data8: UInt8 = 0
+    public var pad2: UInt8 = 0
     public var data32: UInt32 = 0
     public var bytes: (
         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,

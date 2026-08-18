@@ -125,16 +125,19 @@ class DaemonService: NSObject, CoolCumberDaemonProtocol {
             // 1. Set Fan Mode to Manual (1)
             let mdSuccess = smc.writeValue(key: "F\(idx)Md", bytes: [1])
             
-            // 2. Set Target RPM
+            // 2. Set Target RPM (F*Tg)
             let tgSuccess = smc.writeFanSpeed(key: "F\(idx)Tg", rpm: Double(rpm))
             
-            if mdSuccess || tgSuccess {
+            // 3. Set Minimum RPM (F*Mn) - Essential on Apple Silicon to force fan spin
+            let mnSuccess = smc.writeFanSpeed(key: "F\(idx)Mn", rpm: Double(rpm))
+            
+            if mdSuccess || tgSuccess || mnSuccess {
                 anySuccess = true
             }
-            logToDisk("SetFanSpeed Fan\(idx): Mode=\(mdSuccess), Target(\(rpm))=\(tgSuccess)")
+            logToDisk("SetFanSpeed Fan\(idx): Mode=\(mdSuccess), Target(\(rpm))=\(tgSuccess), Min=\(mnSuccess)")
         }
         
-        // Also write FS! bitmask
+        // Also write FS! bitmask for older SMC architectures
         let mask = UInt16((1 << fanCount) - 1)
         let maskBytes: [UInt8] = [UInt8(mask >> 8), UInt8(mask & 0xFF)]
         _ = smc.writeValue(key: "FS! ", bytes: maskBytes)
@@ -154,7 +157,8 @@ class DaemonService: NSObject, CoolCumberDaemonProtocol {
         
         for idx in 0..<max(1, fanCount) {
             let mdSuccess = smc.writeValue(key: "F\(idx)Md", bytes: [0])
-            if mdSuccess { anySuccess = true }
+            let mnSuccess = smc.writeFanSpeed(key: "F\(idx)Mn", rpm: 1200.0)
+            if mdSuccess || mnSuccess { anySuccess = true }
         }
         
         _ = smc.writeValue(key: "FS! ", bytes: [0, 0])
