@@ -29,7 +29,7 @@ targets:
         embed: false
       - target: ThermFlowWidget
         embed: true
-    postCompileScripts:
+    postBuildScripts:
       - script: |
           mkdir -p "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchServices"
           cp -f "${BUILT_PRODUCTS_DIR}/com.coolcumber.helper" "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchServices/com.coolcumber.helper"
