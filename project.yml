@@ -1,6 +1,6 @@
 name: MacThermFlow
 options:
-  bundleIdPrefix: com.coolcumber
+  bundleIdPrefix: com.slmcamp
   deploymentTarget:
     macOS: "13.0"
 targets:
@@ -12,7 +12,7 @@ targets:
       - ThermFlowApp/Assets.xcassets
     settings:
       PRODUCT_NAME: CoolCumber
-      PRODUCT_BUNDLE_IDENTIFIER: com.coolcumber.CoolCumber
+      PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber
       ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: ThermFlowApp/Info.plist
@@ -20,8 +20,9 @@ targets:
         CFBundleIconName: AppIcon
         NSHumanReadableCopyright: "Copyright © 2026 CoolCumber. All rights reserved."
         LSUIElement: true # Menu bar app
+        LSApplicationCategoryType: "public.app-category.utilities"
         CFBundleURLTypes:
-          - CFBundleURLName: "com.coolcumber.url"
+          - CFBundleURLName: "com.slmcamp.url"
             CFBundleURLSchemes:
               - coolcumber
     dependencies:
@@ -46,7 +47,7 @@ targets:
       - ThermFlowApp/Assets.xcassets
     settings:
       PRODUCT_NAME: CoolCumber Lite
-      PRODUCT_BUNDLE_IDENTIFIER: com.coolcumber.CoolCumber
+      PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber
       ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       SWIFT_ACTIVE_COMPILATION_CONDITIONS: APPSTORE
       ENABLE_APP_SANDBOX: YES
@@ -57,8 +58,9 @@ targets:
         CFBundleIconName: AppIcon
         NSHumanReadableCopyright: "Copyright © 2026 CoolCumber. All rights reserved."
         LSUIElement: true # Menu bar app
+        LSApplicationCategoryType: "public.app-category.utilities"
         CFBundleURLTypes:
-          - CFBundleURLName: "com.coolcumber.url"
+          - CFBundleURLName: "com.slmcamp.url"
             CFBundleURLSchemes:
               - coolcumber
     dependencies:
@@ -89,5 +91,5 @@ targets:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       PRODUCT_NAME: CoolCumberWidget
-      PRODUCT_BUNDLE_IDENTIFIER: com.coolcumber.CoolCumber.CoolCumberWidget
+      PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber.CoolCumberWidget
       SKIP_INSTALL: YES

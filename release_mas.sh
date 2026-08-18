@@ -6,7 +6,7 @@ set -e
 # ============================================================================
 
 APP_NAME="CoolCumber Lite"
-APP_BUNDLE_ID="com.coolcumber.CoolCumber"
+APP_BUNDLE_ID="com.slmcamp.CoolCumber"
 SCHEME="ThermFlowAppStore"
 DERIVED_DATA_PATH="./build_mas"
 BUILT_APP="$DERIVED_DATA_PATH/Build/Products/Release/CoolCumber Lite.app"
