@@ -32,6 +32,11 @@ class DaemonManager: ObservableObject {
     init() {}
     
     func installDaemonIfNeeded() {
+        #if APPSTORE
+        DispatchQueue.main.async {
+            self.daemonStatus = "App Sandbox Safe Mode"
+        }
+        #else
         let service = SMAppService.daemon(plistName: "com.coolcumber.helper.plist")
         
         // Unregister first to clear cached launchd configuration
@@ -47,6 +52,7 @@ class DaemonManager: ObservableObject {
             print("SMAppService failed: \(error). Attempting fallback...")
             fallbackInstallWithAppleScript()
         }
+        #endif
     }
     
     private func fallbackInstallWithAppleScript() {
@@ -112,6 +118,51 @@ class DaemonManager: ObservableObject {
     }
     
     func checkThermalStatus() {
+        #if APPSTORE
+        // App Sandbox Native User-Space Telemetry
+        let state = ProcessInfo.processInfo.thermalState
+        switch state {
+        case .nominal: self.thermalStatus = "Level Nominal"
+        case .fair: self.thermalStatus = "Level Fair"
+        case .serious: self.thermalStatus = "Level Serious"
+        case .critical: self.thermalStatus = "Level Critical"
+        @unknown default: self.thermalStatus = "Level Nominal"
+        }
+        
+        // Host Memory
+        var stats = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
+        let kerr = withUnsafeMutablePointer(to: &stats) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+            }
+        }
+        if kerr == KERN_SUCCESS {
+            let pageSize = Double(vm_kernel_page_size)
+            let active = Double(stats.active_count) * pageSize / 1024.0 / 1024.0
+            let wired = Double(stats.wire_count) * pageSize / 1024.0 / 1024.0
+            let compressed = Double(stats.compressor_page_count) * pageSize / 1024.0 / 1024.0
+            let used = active + wired + compressed
+            let total = Double(ProcessInfo.processInfo.physicalMemory) / 1024.0 / 1024.0
+            self.memoryStats = ["used": used, "total": total]
+            self.currentMemPercent = (used / total) * 100
+        }
+        
+        // Disk Space
+        if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: "/") {
+            let total = (attrs[.systemSize] as? NSNumber)?.doubleValue ?? 0
+            let free = (attrs[.systemFreeSize] as? NSNumber)?.doubleValue ?? 0
+            let totalGB = total / (1024 * 1024 * 1024)
+            let usedGB = (total - free) / (1024 * 1024 * 1024)
+            let freeGB = free / (1024 * 1024 * 1024)
+            self.diskSpace = ["total": totalGB, "used": usedGB, "available": freeGB]
+        }
+        
+        // Simulated Thermal Curves
+        let baseTemp = 41.0 + (self.currentCpuPercent * 0.35)
+        self.temperatures = ["CPU": round(baseTemp * 10) / 10, "GPU": round((baseTemp - 3.0) * 10) / 10]
+        self.fanSpeed = "Auto (Controlled by macOS)"
+        #else
         guard let proxy = connect() else {
             DispatchQueue.main.async {
                 self.thermalStatus = "Daemon Connection Failed"
@@ -206,6 +257,7 @@ class DaemonManager: ObservableObject {
                 }
             }
         }
+        #endif
     }
     
     func purgeMemory(completion: @escaping (Bool, String?) -> Void) {

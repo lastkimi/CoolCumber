@@ -127,6 +127,13 @@ struct ThermalPowerView: View {
                                 .foregroundColor(DesignSystem.Colors.textSecondary)
                         }
                         
+                        #if APPSTORE
+                        HStack {
+                            Text(lang.currentLanguage == "zh" ? "系统原生温控已托管 (App Store 安全沙盒规范)" : "Managed by macOS Kernel (App Store Sandbox)")
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundColor(DesignSystem.Colors.textTertiary)
+                        }
+                        #else
                         if coolingVM.fanEngine.isManualModeEnabled {
                             VStack(spacing: DesignSystem.Spacing.normal) {
                                 Slider(value: Binding(
@@ -149,6 +156,7 @@ struct ThermalPowerView: View {
                                 }
                             }
                         }
+                        #endif
                     }
                     .padding(DesignSystem.Spacing.comfortable)
                     .glassCard()
