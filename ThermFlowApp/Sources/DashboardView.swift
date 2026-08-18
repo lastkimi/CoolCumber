@@ -398,12 +398,33 @@ struct DashboardView: View {
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
                 
-                // Version Label
-                HStack {
-                    Text("\(lang.tr("version")): v1.0.0")
+                // Version Label & Update Indicator
+                HStack(spacing: 4) {
+                    Text("\(lang.tr("version")): v\(UpdateManager.shared.currentVersion)")
                         .font(.system(size: 8))
                         .foregroundColor(DesignSystem.Colors.textTertiary)
+                    
                     Spacer()
+                    
+                    if UpdateManager.shared.hasUpdate {
+                        Button(action: {
+                            selectedTab = "preferences"
+                        }) {
+                            HStack(spacing: 2) {
+                                Circle()
+                                    .fill(DesignSystem.Colors.statusHealthy)
+                                    .frame(width: 5, height: 5)
+                                Text("New")
+                                    .font(.system(size: 7, weight: .bold))
+                                    .foregroundColor(DesignSystem.Colors.statusHealthy)
+                            }
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(DesignSystem.Colors.statusHealthy.opacity(0.15))
+                            .cornerRadius(3)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)

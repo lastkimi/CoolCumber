@@ -35,37 +35,51 @@ class SmartBarManager {
         return false
     }
     
+    private var isExpanded: Bool = false
+    private let compactWidth: CGFloat = 230
+    private let compactHeight: CGFloat = 38
+    private let expandedWidth: CGFloat = 340
+    private let expandedHeight: CGFloat = 160
+    
     func setup() {
+        let initialWidth = compactWidth
+        let initialHeight = compactHeight
+        
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+            contentRect: NSRect(x: 0, y: 0, width: initialWidth, height: initialHeight),
             styleMask: [.nonactivatingPanel, .borderless],
             backing: .buffered,
             defer: false
         )
         
-        panel.level = .screenSaver
+        panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         panel.hasShadow = false
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.ignoresMouseEvents = false
         
-        // Use a CenteringContainerView approach (from SuperIsland):
-        // The hosting view is set at a fixed large size and pinned to the top-center.
-        // The window acts as a clipping viewport.
         let hostingView = NSHostingView(rootView: SmartBarView())
-        hostingView.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
+        hostingView.autoresizingMask = [.width, .height]
+        hostingView.frame = NSRect(x: 0, y: 0, width: initialWidth, height: initialHeight)
         
         let containerView = TopCenterContainerView()
         containerView.addSubview(hostingView)
         panel.contentView = containerView
         
+        self.window = panel
+        
         // Position AFTER setting content
         positionWindow(panel)
         
-        self.window = panel
-        
         NotificationCenter.default.addObserver(self, selector: #selector(screenParametersChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    }
+    
+    func updateExpandedState(_ isHovering: Bool) {
+        guard isExpanded != isHovering else { return }
+        self.isExpanded = isHovering
+        guard let panel = window else { return }
+        positionWindow(panel)
     }
     
     @objc private func screenParametersChanged() {
@@ -97,37 +111,32 @@ class SmartBarManager {
         }
         
         let screenFrame = screen.frame
-        let windowWidth: CGFloat = 400
-        let windowHeight: CGFloat = 300
+        let currentWidth = isExpanded ? expandedWidth : compactWidth
+        let currentHeight = isExpanded ? expandedHeight : compactHeight
         
         // 2. Compute X position: center on the notch if it exists
         let xPos: CGFloat
         if let notch = notchRect(screen: screen) {
             let notchCenterX = notch.midX
-            xPos = notchCenterX - (windowWidth / 2)
+            xPos = notchCenterX - (currentWidth / 2)
         } else {
-            xPos = screenFrame.midX - (windowWidth / 2)
+            xPos = screenFrame.midX - (currentWidth / 2)
         }
         
         // 3. Y position: top of window touches top of screen
-        let yPos = screenFrame.maxY - windowHeight
+        let yPos = screenFrame.maxY - currentHeight
         
-        panel.setFrame(NSRect(x: xPos, y: yPos, width: windowWidth, height: windowHeight), display: true)
+        panel.setFrame(NSRect(x: xPos, y: yPos, width: currentWidth, height: currentHeight), display: true)
         panel.orderFront(nil)
     }
 }
 
-// MARK: - Container View (inspired by SuperIsland's CenteringContainerView)
-/// Pins the hosting subview to the top-center of the container.
-/// This prevents AppKit from moving the SwiftUI content when the window resizes.
+// MARK: - Container View
 private final class TopCenterContainerView: NSView {
     override func layout() {
         super.layout()
         guard let hostingView = subviews.first else { return }
-        // Center horizontally
-        hostingView.frame.origin.x = (bounds.width - hostingView.frame.width) / 2
-        // Pin to top (AppKit coords: y=0 at bottom)
-        hostingView.frame.origin.y = bounds.height - hostingView.frame.height
+        hostingView.frame = bounds
     }
 }
 

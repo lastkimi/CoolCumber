@@ -131,9 +131,20 @@ class LanguageManager: ObservableObject {
             "proactive_enabled": ["en": "Proactive Cooling Enabled", "zh": "智能主动散热模式已开启"],
             "proactive_disabled": ["en": "Proactive Cooling Disabled", "zh": "智能主动散热模式已关闭"],
             "fan_override_set": ["en": "Fan override set to %d RPM.", "zh": "风扇已强制覆盖锁定为 %d RPM。"],
-            "restored_default": ["en": "Restored system default fan control.", "zh": "已恢复系统默认风扇控制模式。"],
             "smc_applied": ["en": "SMC Limit applied.", "zh": "SMC 充电限制已成功应用。"],
-            "smc_failed": ["en": "Failed to set SMC charge limit", "zh": "设置 SMC 充电限制失败"]
+            "smc_failed": ["en": "Failed to set SMC charge limit", "zh": "设置 SMC 充电限制失败"],
+            
+            // Software Update
+            "software_update": ["en": "Software Update", "zh": "软件在线更新"],
+            "update_desc": ["en": "Check for the latest releases from GitHub directly.", "zh": "直接检测并获取来自 GitHub 的最新版本发布。"],
+            "check_updates": ["en": "Check for Updates", "zh": "检查新版本"],
+            "checking_updates": ["en": "Checking...", "zh": "正在检查..."],
+            "current_version": ["en": "Current Version", "zh": "当前版本"],
+            "new_version_available": ["en": "New Version Available", "zh": "发现可用新版本"],
+            "auto_check": ["en": "Auto Check Updates", "zh": "启动时自动检测更新"],
+            "update_now": ["en": "Update Now", "zh": "立即下载更新"],
+            "downloading": ["en": "Downloading...", "zh": "正在下载..."],
+            "view_on_github": ["en": "View on GitHub", "zh": "前往 GitHub 查看"]
         ]
         return dict[key]?[currentLanguage] ?? key
     }

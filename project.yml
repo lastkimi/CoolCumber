@@ -32,7 +32,7 @@ targets:
     postCompileScripts:
       - script: |
           mkdir -p "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchServices"
-          cp -f "${BUILT_PRODUCTS_DIR}/ThermFlowDaemon" "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchServices/com.coolcumber.helper"
+          cp -f "${BUILT_PRODUCTS_DIR}/com.coolcumber.helper" "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchServices/com.coolcumber.helper"
           mkdir -p "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons"
           cp -f "${SRCROOT}/ThermFlowDaemon/LaunchDaemon.plist" "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons/com.coolcumber.helper.plist"
           cp -f "${SRCROOT}/ThermFlowDaemon/LaunchDaemon-Fallback.plist" "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons/com.coolcumber.helper-fallback.plist"
@@ -47,6 +47,9 @@ targets:
     settings:
       CODE_SIGN_IDENTITY: "-"
       ENABLE_HARDENED_RUNTIME: NO
+      CREATE_INFOPLIST_SECTION_IN_BINARY: YES
+      PRODUCT_BUNDLE_IDENTIFIER: com.coolcumber.helper
+      PRODUCT_NAME: com.coolcumber.helper
 
   ThermFlowWidget:
     type: app-extension

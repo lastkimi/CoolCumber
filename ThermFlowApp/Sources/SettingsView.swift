@@ -4,6 +4,7 @@ import SwiftUI
 /// Focuses purely on AI engine models and credentials.
 struct SettingsView: View {
     @ObservedObject private var lang = LanguageManager.shared
+    @ObservedObject private var updater = UpdateManager.shared
     @State private var selectedProvider = "deepseek"
     @State private var apiKey = ""
     @State private var saveStatus: String?
@@ -20,6 +21,119 @@ struct SettingsView: View {
                         .font(DesignSystem.Typography.body)
                         .foregroundColor(DesignSystem.Colors.textSecondary)
                 }
+                
+                // Software Update Card
+                VStack(alignment: .leading, spacing: DesignSystem.Spacing.comfortable) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(lang.tr("software_update"))
+                                .font(DesignSystem.Typography.title)
+                                .foregroundColor(DesignSystem.Colors.accentBrand)
+                            Text(lang.tr("update_desc"))
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundColor(DesignSystem.Colors.textSecondary)
+                        }
+                        Spacer()
+                        
+                        Button(action: {
+                            updater.checkForUpdates(isManual: true)
+                        }) {
+                            HStack(spacing: DesignSystem.Spacing.tight) {
+                                if updater.isChecking {
+                                    ProgressView()
+                                        .scaleEffect(0.6)
+                                        .frame(width: 14, height: 14)
+                                } else {
+                                    Image(systemName: "arrow.triangle.2.circlepath")
+                                        .font(.system(size: 11))
+                                }
+                                Text(updater.isChecking ? lang.tr("checking_updates") : lang.tr("check_updates"))
+                                    .font(DesignSystem.Typography.headline)
+                            }
+                            .foregroundColor(DesignSystem.Colors.textInverse)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(DesignSystem.Colors.accentBrand)
+                            .cornerRadius(DesignSystem.Corners.smallButton)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(updater.isChecking)
+                    }
+                    
+                    Divider().background(DesignSystem.Colors.divider)
+                    
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(lang.tr("current_version") + ": v\(updater.currentVersion)")
+                                .font(DesignSystem.Typography.body)
+                                .foregroundColor(DesignSystem.Colors.textPrimary)
+                            if updater.hasUpdate {
+                                Text(lang.tr("new_version_available") + ": v\(updater.latestVersion)")
+                                    .font(DesignSystem.Typography.headline)
+                                    .foregroundColor(DesignSystem.Colors.statusHealthy)
+                            }
+                        }
+                        
+                        Spacer()
+                        
+                        Toggle(lang.tr("auto_check"), isOn: $updater.autoCheckUpdates)
+                            .toggleStyle(.switch)
+                    }
+                    
+                    if let msg = updater.statusMessage {
+                        Text(msg)
+                            .font(DesignSystem.Typography.headline)
+                            .padding(DesignSystem.Spacing.normal)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(updater.hasUpdate ? DesignSystem.Colors.statusHealthy.opacity(0.12) : DesignSystem.Colors.accentBrand.opacity(0.08))
+                            .foregroundColor(updater.hasUpdate ? DesignSystem.Colors.statusHealthy : DesignSystem.Colors.accentBrand)
+                            .cornerRadius(DesignSystem.Corners.normal)
+                    }
+                    
+                    if updater.hasUpdate {
+                        HStack(spacing: DesignSystem.Spacing.comfortable) {
+                            Button(action: {
+                                updater.downloadAndOpenRelease()
+                            }) {
+                                HStack(spacing: DesignSystem.Spacing.tight) {
+                                    if updater.isDownloading {
+                                        ProgressView()
+                                            .scaleEffect(0.6)
+                                            .frame(width: 14, height: 14)
+                                        Text(lang.tr("downloading"))
+                                    } else {
+                                        Image(systemName: "arrow.down.circle.fill")
+                                        Text(lang.tr("update_now"))
+                                    }
+                                }
+                                .font(DesignSystem.Typography.headline)
+                                .foregroundColor(DesignSystem.Colors.textInverse)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(DesignSystem.Colors.statusHealthy)
+                                .cornerRadius(DesignSystem.Corners.smallButton)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(updater.isDownloading)
+                            
+                            Link(destination: URL(string: updater.releaseURL)!) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "safari")
+                                    Text(lang.tr("view_on_github"))
+                                }
+                                .font(DesignSystem.Typography.headline)
+                                .foregroundColor(DesignSystem.Colors.textPrimary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(DesignSystem.Colors.glassBgHover)
+                                .cornerRadius(DesignSystem.Corners.smallButton)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(DesignSystem.Spacing.comfortable)
+                .glassCard()
                 
                 // AI Credentials Card
                 VStack(alignment: .leading, spacing: DesignSystem.Spacing.comfortable) {

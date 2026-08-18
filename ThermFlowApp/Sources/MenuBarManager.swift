@@ -96,13 +96,13 @@ class MenuBarManager {
             window.orderOut(nil)
         } else {
             NSApp.activate(ignoringOtherApps: true)
-            // Center the window on the screen where the mouse is (fallback to main screen)
-            let mouseLocation = NSEvent.mouseLocation
-            if let mouseScreen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main {
-                let screenFrame = mouseScreen.frame
-                let x = screenFrame.midX - (window.frame.width / 2)
-                let y = screenFrame.midY - (window.frame.height / 2)
-                window.setFrameOrigin(NSPoint(x: x, y: y))
+            // Center the window on the main/active screen's visible frame
+            let targetScreen = NSScreen.main ?? NSScreen.screens.first
+            if let screen = targetScreen {
+                let visible = screen.visibleFrame
+                let x = visible.origin.x + max(0, (visible.width - window.frame.width) / 2)
+                let y = visible.origin.y + max(0, (visible.height - window.frame.height) / 2)
+                window.setFrameOrigin(NSPoint(x: round(x), y: round(y)))
             } else {
                 window.center()
             }

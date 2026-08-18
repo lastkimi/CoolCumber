@@ -42,10 +42,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         showDashboard()
         
         // 7. Cleanup Installation DMG
+        #if !DEBUG
         cleanupDMG()
+        #endif
     }
     
     private func cleanupDMG() {
+        #if !DEBUG
         DispatchQueue.global(qos: .background).async {
             // Find if we are running from /Applications
             let bundlePath = Bundle.main.bundlePath
@@ -96,6 +99,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 print("Error cleaning up DMG: \(error)")
             }
         }
+        #endif
     }
     
     func showDashboard() {

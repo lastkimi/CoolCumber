@@ -176,7 +176,7 @@ struct SmartBarView: View {
             }
         }
         .padding(.vertical, isHovering ? 6 : 2)
-        .frame(width: isHovering ? 320 : 220)
+        .frame(maxWidth: isHovering ? 320 : 220)
         .background(
             RoundedRectangle(cornerRadius: isHovering ? DesignSystem.Corners.smartBarExpanded : DesignSystem.Corners.smartBarCompact, style: .continuous)
                 .fill(isHovering ? DesignSystem.Colors.glassBgHover : DesignSystem.Colors.glassBg)
@@ -190,14 +190,15 @@ struct SmartBarView: View {
             withAnimation(DesignSystem.Animations.snappy) {
                 isHovering = hovering
             }
+            SmartBarManager.shared.updateExpandedState(hovering)
         }
         .onTapGesture {
             if !isHovering {
                 MenuBarManager.shared.openDashboard()
             }
         }
-        .padding(.top, 4)
-        .frame(width: 400, height: 300, alignment: .top)
+        .padding(.top, 2)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
     
     private func getStatusColor() -> Color {
