@@ -203,6 +203,8 @@ struct SmartBarView: View {
     
     private func getStatusColor() -> Color {
         switch aiEngine.currentDiagnosis.status {
+        case .unavailable:
+            return DesignSystem.Colors.textTertiary
         case .healthy:
             return DesignSystem.Colors.statusHealthy
         case .warning:

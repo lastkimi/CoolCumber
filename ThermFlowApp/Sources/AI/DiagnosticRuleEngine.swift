@@ -8,7 +8,7 @@ struct DiagnosticResult {
 }
 
 enum DiagnosticStatus {
-    case healthy, warning, critical
+    case unavailable, healthy, warning, critical
 }
 
 enum RecommendedAction {
@@ -20,7 +20,7 @@ enum RecommendedAction {
 class DiagnosticRuleEngine: ObservableObject {
     static let shared = DiagnosticRuleEngine()
     
-    @Published var currentDiagnosis: DiagnosticResult = DiagnosticResult(message: "System is healthy. No issues detected.", status: .healthy, recommendedAction: nil)
+    @Published var currentDiagnosis: DiagnosticResult = DiagnosticResult(message: "Waiting for verified telemetry.", status: .unavailable, recommendedAction: nil)
     
     private var timer: Timer?
     
@@ -42,15 +42,14 @@ class DiagnosticRuleEngine: ObservableObject {
     
     private func evaluateRules() {
         let daemon = DaemonManager.shared
-        let cpuTemp = daemon.temperatures["CPU"] ?? 50.0
+        let cpuTemp = daemon.temperatures["CPU"]
         
         // 1. Check Storage Rule (Rule 1-2)
-        let totalDisk = daemon.diskSpace["total"] ?? 1.0
-        let availDisk = daemon.diskSpace["available"] ?? 0.0
-        let freeGB = availDisk / 1_000_000_000
-        let diskPercent = totalDisk > 0 ? ((totalDisk - availDisk) / totalDisk) * 100 : 0
-        
-        if totalDisk > 1.0 && freeGB < 15.0 {
+        let totalDisk = daemon.diskSpace["total"]
+        let availDisk = daemon.diskSpace["available"]
+        let freeGB = availDisk.map { $0 / 1_000_000_000 }
+
+        if let totalDisk, let freeGB, totalDisk > 1.0, freeGB < 15.0 {
             DispatchQueue.main.async {
                 self.currentDiagnosis = DiagnosticResult(
                     message: "Disk space is critically low (only \(Int(freeGB))GB free). System performance may severely degrade.",
@@ -62,8 +61,8 @@ class DiagnosticRuleEngine: ObservableObject {
         }
         
         // 2. Check Network Rule (Rule 3-4)
-        let downRate = (daemon.networkStats["down"] ?? 0) / 1024 / 1024
-        if downRate > 50.0 && cpuTemp > 75.0 {
+        let downRate = (daemon.networkStats["download"] ?? 0) / 1024 / 1024
+        if let cpuTemp, downRate > 50.0 && cpuTemp > 75.0 {
             DispatchQueue.main.async {
                 self.currentDiagnosis = DiagnosticResult(
                     message: "Heavy network download (\(String(format: "%.1f", downRate)) MB/s) is causing network stack overhead and heating.",
@@ -75,23 +74,25 @@ class DiagnosticRuleEngine: ObservableObject {
         }
         
         // 3. Check memory (Rule 5-6)
-        let memTotal = daemon.memoryStats["total"] ?? 1.0
-        let memUsed = daemon.memoryStats["used"] ?? 0.0
-        let memPercent = memTotal > 0 ? (memUsed / memTotal * 100) : 0
+        let memTotal = daemon.memoryStats["total"]
+        let memUsed = daemon.memoryStats["used"]
+        let memPercent = (memTotal != nil && memUsed != nil && memTotal! > 0)
+            ? (memUsed! / memTotal! * 100)
+            : nil
         
-        if memPercent > highMemoryThreshold {
+        if let memPercent, memPercent > highMemoryThreshold {
             DispatchQueue.main.async {
                 self.currentDiagnosis = DiagnosticResult(
-                    message: "Memory usage is very high (\(Int(memPercent))%). Consider purging inactive memory to free up space.",
+                    message: "Memory pressure is high (\(Int(memPercent))%). Review the largest applications before closing anything.",
                     status: .warning,
-                    recommendedAction: .purgeMemory
+                    recommendedAction: nil
                 )
             }
             return
         }
         
         // 4. Check temperature and processes (Rules 7-50+)
-        if cpuTemp > highTempThreshold {
+        if let cpuTemp, cpuTemp > highTempThreshold {
             daemon.readTopProcesses(count: 3) { processes in
                 DispatchQueue.main.async {
                     if let topProcess = processes.first, let name = topProcess["name"] as? String, let cpu = topProcess["cpu"] as? Double, cpu > 30.0 {
@@ -119,10 +120,23 @@ class DiagnosticRuleEngine: ObservableObject {
             return
         }
         
-        // 5. Default healthy (Rule 50+)
+        guard cpuTemp != nil || memPercent != nil || totalDisk != nil else {
+            DispatchQueue.main.async {
+                self.currentDiagnosis = DiagnosticResult(
+                    message: "Verified telemetry is not available yet. No health conclusion has been made.",
+                    status: .unavailable,
+                    recommendedAction: nil
+                )
+            }
+            return
+        }
+
+        // 5. No problem found in the metrics that were actually available.
         DispatchQueue.main.async {
+            let temperatureSummary = cpuTemp.map { "CPU at \(Int($0))°C" } ?? "CPU temperature unavailable"
+            let memorySummary = memPercent.map { "Memory at \(Int($0))%" } ?? "memory unavailable"
             self.currentDiagnosis = DiagnosticResult(
-                message: "System is healthy. CPU at \(Int(cpuTemp))°C and Memory at \(Int(memPercent))%.",
+                message: "Available indicators show no issue: \(temperatureSummary), \(memorySummary).",
                 status: .healthy,
                 recommendedAction: nil
             )

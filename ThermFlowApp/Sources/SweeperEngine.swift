@@ -6,7 +6,8 @@ struct SweeperItem: Identifiable, Hashable {
     let path: String
     let description: String
     var size: UInt64 // Bytes
-    var isSelected: Bool = true
+    // Cleanup is always opt-in. A scan must never pre-authorize deletion.
+    var isSelected: Bool = false
     
     var sizeString: String {
         let formatter = ByteCountFormatter()
@@ -26,6 +27,16 @@ class SweeperEngine: ObservableObject {
     @Published var hasScanned = false
     
     private init() {}
+
+    private var allowedTargets: [(name: String, path: String, description: String)] {
+        let home = getHomeDir()
+        return [
+            ("Xcode DerivedData", "\(home)/Library/Developer/Xcode/DerivedData", "Build products that Xcode can regenerate."),
+            ("Docker Cache", "\(home)/Library/Caches/com.docker.docker", "Cached Docker Desktop data in the user cache directory."),
+            ("npm Package Cache", "\(home)/.npm/_cacache", "Downloaded npm package cache."),
+            ("Yarn Cache", "\(home)/Library/Caches/Yarn", "Downloaded Yarn package cache.")
+        ]
+    }
     
     func getHomeDir() -> String {
         return NSHomeDirectory()
@@ -35,16 +46,7 @@ class SweeperEngine: ObservableObject {
         isScanning = true
         cleanResult = nil
         
-        let home = getHomeDir()
-        let scanTargets = [
-            ("Xcode DerivedData", "\(home)/Library/Developer/Xcode/DerivedData", "DerivedData files created during Xcode builds."),
-            ("iOS Simulators", "\(home)/Library/Developer/CoreSimulator/Devices", "iOS emulator caches and simulated device storage."),
-            ("Docker Cache", "\(home)/Library/Caches/com.docker.docker", "Docker container images and system cache."),
-            ("npm Cache", "\(home)/.npm", "Cache directory for npm packages."),
-            ("Yarn Cache", "\(home)/Library/Caches/Yarn", "Yarn global package cache."),
-            ("Claude Desktop Cache", "\(home)/Library/Application Support/Claude", "Claude for Mac app caches and databases."),
-            ("Cursor History Cache", "\(home)/Library/Application Support/Cursor", "Cursor editor auto-save snapshots and indexing metadata.")
-        ]
+        let scanTargets = allowedTargets
         
         DispatchQueue.global(qos: .userInitiated).async {
             var scannedItems: [SweeperItem] = []
@@ -68,35 +70,34 @@ class SweeperEngine: ObservableObject {
     }
     
     func cleanSelected() {
-        isCleaning = true
         let selected = items.filter { $0.isSelected }
+        guard !selected.isEmpty else {
+            cleanResult = "Select one or more regenerable caches to move to Trash."
+            return
+        }
+
+        isCleaning = true
+        let allowedPaths = Set(allowedTargets.map { canonicalPath($0.path) })
         
         DispatchQueue.global(qos: .userInitiated).async {
             var freedBytes: UInt64 = 0
             let fm = FileManager.default
+            var failures: [String] = []
             
             for item in selected {
-                // Safely move to Trash instead of rm -rf
-                let trashURL = try? fm.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: URL(fileURLWithPath: item.path), create: true)
-                
-                // Let's resolve the actual User's Trash folder
-                let home = self.getHomeDir()
-                let trashDir = "\(home)/.Trash"
-                let targetTrashPath = "\(trashDir)/\(URL(fileURLWithPath: item.path).lastPathComponent)"
-                
-                try? fm.removeItem(atPath: targetTrashPath) // remove collision
+                let canonicalItemPath = self.canonicalPath(item.path)
+                guard allowedPaths.contains(canonicalItemPath) else {
+                    failures.append("\(item.name): path is not an approved cache target")
+                    continue
+                }
+
                 do {
-                    // Try to move to Trash, if fails, try to delete directly
-                    try fm.moveItem(atPath: item.path, toPath: targetTrashPath)
+                    // FileManager chooses a collision-safe Trash destination. There is
+                    // intentionally no permanent-delete fallback.
+                    try fm.trashItem(at: URL(fileURLWithPath: canonicalItemPath), resultingItemURL: nil)
                     freedBytes += item.size
                 } catch {
-                    // Fallback to direct deletion if moving to Trash fails
-                    do {
-                        try fm.removeItem(atPath: item.path)
-                        freedBytes += item.size
-                    } catch {
-                        print("Failed to delete \(item.path): \(error)")
-                    }
+                    failures.append("\(item.name): \(error.localizedDescription)")
                 }
             }
             
@@ -105,10 +106,21 @@ class SweeperEngine: ObservableObject {
                 let formatter = ByteCountFormatter()
                 formatter.countStyle = .file
                 let sizeStr = formatter.string(fromByteCount: Int64(freedBytes))
-                self.cleanResult = "Successfully cleaned \(sizeStr) of developer caches."
+                if failures.isEmpty {
+                    self.cleanResult = "Moved \(sizeStr) of regenerable caches to Trash."
+                } else {
+                    self.cleanResult = "Moved \(sizeStr) to Trash. Skipped \(failures.count) item(s): \(failures.joined(separator: "; "))"
+                }
                 self.scan() // rescanning to update sizes
             }
         }
+    }
+
+    private func canonicalPath(_ path: String) -> String {
+        URL(fileURLWithPath: path)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+            .path
     }
     
     private func getDirectorySize(atPath path: String) -> UInt64 {

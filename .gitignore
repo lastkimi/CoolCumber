@@ -45,6 +45,9 @@ playground.xcworkspace
 # settings (e.g. disabling schemes autogeneration).
 #
 # .swiftpm/xcode/
+**/.build/
+.swiftpm/
+*.xcresult
 
 # macOS
 .DS_Store

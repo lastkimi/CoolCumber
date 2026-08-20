@@ -20,12 +20,6 @@ class LLMEngine: ObservableObject {
         let model = provider == "deepseek" ? "deepseek-chat" : "qwen-plus"
         
         let daemon = DaemonManager.shared
-        let cpuTemp = daemon.temperatures["CPU"] ?? 0.0
-        let fanSpeed = daemon.fanSpeed
-        let memTotal = daemon.memoryStats["total"] ?? 1.0
-        let memUsed = daemon.memoryStats["used"] ?? 0.0
-        let memPercent = memTotal > 0 ? (memUsed / memTotal * 100) : 0
-        let netDown = (daemon.networkStats["download"] ?? 0) / 1024 / 1024
         
         // Fetch top processes
         daemon.readTopProcesses(count: 3) { processes in
@@ -36,15 +30,34 @@ class LLMEngine: ObservableObject {
                 }
             }
             
-            let systemStatus = """
-            Current macOS System Metrics:
-            - CPU Temperature: \(Int(cpuTemp))°C
-            - Fan Speed: \(fanSpeed)
-            - RAM Usage: \(Int(memPercent))% (\(Int(memUsed / 1024 / 1024 / 1024))GB used / \(Int(memTotal / 1024 / 1024 / 1024))GB total)
-            - Download Rate: \(String(format: "%.1f", netDown)) MB/s
-            - Top CPU-consuming processes:
-            \(processesStr)
-            """
+            var metricLines: [String] = []
+            if let cpuTemp = daemon.temperatures["CPU"] {
+                metricLines.append("- CPU Temperature: \(Int(cpuTemp))°C")
+            }
+            if let fanRPM = Int(daemon.fanSpeed.replacingOccurrences(of: " RPM", with: "")), fanRPM > 0 {
+                metricLines.append("- Fan Speed: \(fanRPM) RPM")
+            }
+            if let memTotal = daemon.memoryStats["total"],
+               let memUsed = daemon.memoryStats["used"], memTotal > 0 {
+                let memPercent = memUsed / memTotal * 100
+                metricLines.append("- RAM Usage: \(Int(memPercent))%")
+            }
+            if let download = daemon.networkStats["download"] {
+                metricLines.append("- Download Rate: \(String(format: "%.1f", download / 1024 / 1024)) MB/s")
+            }
+            if !processesStr.isEmpty {
+                metricLines.append("- Top CPU-consuming process names:\n\(processesStr)")
+            }
+            guard !metricLines.isEmpty else {
+                DispatchQueue.main.async {
+                    let message = "No verified telemetry is available to analyze."
+                    self.responseText = message
+                    completion(message)
+                }
+                return
+            }
+
+            let systemStatus = "Current macOS System Metrics:\n" + metricLines.joined(separator: "\n")
             
             let systemPrompt = "You are a senior macOS systems engineer. Analyze the system metrics and provide a brief, professional explanation in 1-2 sentences of why the computer might be hot/slow and give action suggestions. Output in Chinese."
             
@@ -133,7 +146,7 @@ class LLMEngine: ObservableObject {
         }
     }
     
-    func explainProcess(name: String, path: String, completion: @escaping (String) -> Void) {
+    func explainProcess(name: String, path _: String, completion: @escaping (String) -> Void) {
         let provider = UserDefaults.standard.string(forKey: "ai_provider") ?? "deepseek"
         guard let apiKey = KeychainHelper.shared.read(account: provider), !apiKey.isEmpty else {
             completion("请先在设置中配置 API Key。")
@@ -146,10 +159,8 @@ class LLMEngine: ObservableObject {
         
         let model = provider == "deepseek" ? "deepseek-chat" : "qwen-plus"
         
-        let userMessage = """
-        进程名: \(name)
-        路径: \(path)
-        """
+        // Do not transmit the user's filesystem paths to third-party AI services.
+        let userMessage = "进程名: \(name)"
         
         let systemPrompt = """
         你是一个资深的 macOS 系统工程师。解释这个进程是什么，属于哪个应用或系统组件，在 CPU/内存高负载时是否可以安全关闭，以及强制关闭它有什么风险或后果。用中文回答，内容限制在 3 句话内，清晰简洁。

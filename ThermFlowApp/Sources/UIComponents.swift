@@ -60,7 +60,7 @@ struct SparklineChart: View {
                             Path { path in
                                 path.move(to: CGPoint(x: 0, y: geometry.size.height))
                                 for index in data.indices {
-                                    let x = CGFloat(index) / CGFloat(data.count - 1) * geometry.size.width
+                                    let x = data.count == 1 ? geometry.size.width : CGFloat(index) / CGFloat(data.count - 1) * geometry.size.width
                                     let val = min(max(data[index], currentMin), currentMax)
                                     let y = geometry.size.height - CGFloat((val - currentMin) / range) * geometry.size.height
                                     path.addLine(to: CGPoint(x: x, y: y))
@@ -79,7 +79,7 @@ struct SparklineChart: View {
                             // Stroke line
                             Path { path in
                                 for index in data.indices {
-                                    let x = CGFloat(index) / CGFloat(data.count - 1) * geometry.size.width
+                                    let x = data.count == 1 ? geometry.size.width : CGFloat(index) / CGFloat(data.count - 1) * geometry.size.width
                                     let val = min(max(data[index], currentMin), currentMax)
                                     let y = geometry.size.height - CGFloat((val - currentMin) / range) * geometry.size.height
                                     
@@ -161,6 +161,35 @@ struct ThermalGauge: View {
                 .foregroundColor(DesignSystem.Colors.textSecondary)
                 .lineLimit(1)
         }
+    }
+}
+
+struct UnavailableGauge: View {
+    var title: String
+    var message: String = "Unavailable"
+
+    var body: some View {
+        VStack(spacing: DesignSystem.Spacing.tight) {
+            ZStack {
+                Circle()
+                    .stroke(DesignSystem.Colors.glassBorder, lineWidth: 5)
+                Image(systemName: "questionmark")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(DesignSystem.Colors.textTertiary)
+            }
+            .frame(width: 68, height: 68)
+
+            Text(title)
+                .font(DesignSystem.Typography.caption)
+                .foregroundColor(DesignSystem.Colors.textSecondary)
+                .lineLimit(1)
+            Text(message)
+                .font(DesignSystem.Typography.micro)
+                .foregroundColor(DesignSystem.Colors.textTertiary)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(message)")
     }
 }
 

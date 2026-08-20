@@ -27,11 +27,13 @@ class UpdateManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     
     init() {
+        #if !APPSTORE
         if autoCheckUpdates {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                 self.checkForUpdates(isManual: false)
             }
         }
+        #endif
     }
     
     var currentVersion: String {
@@ -39,6 +41,16 @@ class UpdateManager: ObservableObject {
     }
     
     func checkForUpdates(isManual: Bool = true) {
+        #if APPSTORE
+        isChecking = false
+        hasUpdate = false
+        if isManual {
+            statusMessage = LanguageManager.shared.currentLanguage == "zh"
+                ? "此版本由 Mac App Store 管理更新。"
+                : "Updates for this edition are managed by the Mac App Store."
+        }
+        return
+        #else
         guard !isChecking else { return }
         
         isChecking = true
@@ -110,6 +122,7 @@ class UpdateManager: ObservableObject {
                 }
             }
         }.resume()
+        #endif
     }
     
     private func isVersion(_ v1: String, greaterThan v2: String) -> Bool {
@@ -127,40 +140,16 @@ class UpdateManager: ObservableObject {
     }
     
     func downloadAndOpenRelease() {
-        guard let url = URL(string: downloadURL.isEmpty ? releaseURL : downloadURL) else { return }
-        
-        if downloadURL.hasSuffix(".dmg") {
-            // Direct download to user's Downloads folder
-            isDownloading = true
-            downloadProgress = 0.0
-            
-            let session = URLSession(configuration: .default)
-            let downloadTask = session.downloadTask(with: url) { [weak self] tempURL, response, error in
-                DispatchQueue.main.async {
-                    guard let self = self else { return }
-                    self.isDownloading = false
-                    
-                    if let tempURL = tempURL {
-                        let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: "/tmp")
-                        let destinationURL = downloadsURL.appendingPathComponent("CoolCumber.dmg")
-                        
-                        try? FileManager.default.removeItem(at: destinationURL)
-                        do {
-                            try FileManager.default.moveItem(at: tempURL, to: destinationURL)
-                            NSWorkspace.shared.open(destinationURL)
-                            self.statusMessage = LanguageManager.shared.currentLanguage == "zh" ? "下载完成，已为您打开安装包。" : "Downloaded! Opened DMG installer."
-                        } catch {
-                            NSWorkspace.shared.open(url)
-                        }
-                    } else {
-                        // Fallback: open in browser
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-            }
-            downloadTask.resume()
-        } else {
-            NSWorkspace.shared.open(url)
-        }
+        #if APPSTORE
+        statusMessage = LanguageManager.shared.currentLanguage == "zh"
+            ? "请在 Mac App Store 的“更新”页面获取新版本。"
+            : "Open the Mac App Store Updates page to get new versions."
+        #else
+        // Never execute or mount an unsigned asset downloaded by the app. The
+        // release page lets the user inspect checksums/signing information and
+        // keeps the update channel fail-closed until a signed Sparkle feed ships.
+        guard let url = URL(string: releaseURL) else { return }
+        NSWorkspace.shared.open(url)
+        #endif
     }
 }

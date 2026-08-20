@@ -81,7 +81,10 @@ class FanEngine: ObservableObject {
         timer = nil
         if let observer = workspaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            workspaceObserver = nil
         }
+        activeAutoRPM = nil
+        DaemonManager.shared.connect()?.resetFanToAutomatic { _ in }
     }
     
     private func handleAppLaunch(appName: String) {
@@ -104,7 +107,13 @@ class FanEngine: ObservableObject {
         guard !isManualModeEnabled else { return }
         
         let daemon = DaemonManager.shared
-        let currentTemp = daemon.temperatures["CPU"] ?? 50.0
+        guard let currentTemp = daemon.temperatures["CPU"] else {
+            if activeAutoRPM != nil {
+                activeAutoRPM = nil
+                applyCurrentState()
+            }
+            return
+        }
         
         DispatchQueue.main.async {
             var target: Int? = nil

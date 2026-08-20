@@ -9,13 +9,29 @@ struct DashboardView: View {
     @ObservedObject var llmEngine = LLMEngine.shared
     @ObservedObject private var lang = LanguageManager.shared
     
-    @State private var cpuHistory: [Double] = Array(repeating: 45.0, count: 30)
+    @State private var cpuHistory: [Double] = []
     @State private var isHoveringClose = false
     @State private var selectedTab: String = "dashboard"
     @State private var toastMessage: String?
     
-    @AppStorage("ecoModeEnabled") private var ecoModeEnabled = false
     @AppStorage("isMaxCooling") private var isMaxCooling = false
+
+    private var diagnosisLabel: String {
+        switch aiEngine.currentDiagnosis.status {
+        case .unavailable: return lang.currentLanguage == "zh" ? "等待可信数据" : "WAITING FOR DATA"
+        case .healthy: return lang.tr("ai_copilot_status").replacingOccurrences(of: "%@", with: "COOL")
+        case .warning, .critical: return lang.tr("ai_copilot_status").replacingOccurrences(of: "%@", with: "HOT")
+        }
+    }
+
+    private var diagnosisColor: Color {
+        switch aiEngine.currentDiagnosis.status {
+        case .unavailable: return DesignSystem.Colors.textTertiary
+        case .healthy: return DesignSystem.Colors.accentBrand
+        case .warning: return DesignSystem.Colors.statusWarning
+        case .critical: return DesignSystem.Colors.statusCritical
+        }
+    }
     
     private var headerBar: some View {
         HStack {
@@ -48,10 +64,10 @@ struct DashboardView: View {
                     .font(.system(size: 20))
                 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(aiEngine.currentDiagnosis.status == .healthy ? lang.tr("ai_copilot_status").replacingOccurrences(of: "%@", with: "COOL") : lang.tr("ai_copilot_status").replacingOccurrences(of: "%@", with: "HOT"))
+                    Text(diagnosisLabel)
                         .font(DesignSystem.Typography.headline)
-                        .foregroundColor(aiEngine.currentDiagnosis.status == .healthy ? DesignSystem.Colors.accentBrand : DesignSystem.Colors.statusWarning)
-                    Text(lang.currentLanguage == "zh" ? "系统运行正常。温度与能效处于最佳状态。" : aiEngine.currentDiagnosis.message)
+                        .foregroundColor(diagnosisColor)
+                    Text(aiEngine.currentDiagnosis.message)
                         .font(DesignSystem.Typography.body)
                         .foregroundColor(DesignSystem.Colors.textPrimary)
                         .lineLimit(2)
@@ -127,10 +143,13 @@ struct DashboardView: View {
             // First Row of gauges
             HStack(spacing: DesignSystem.Spacing.comfortable) {
                 // CPU Temperature Gauge
-                let cpuTemp = daemonManager.temperatures["CPU"] ?? 45.0
-                let cpuStatusColor = cpuTemp > 80 ? DesignSystem.Colors.statusCritical : (cpuTemp > 65 ? DesignSystem.Colors.statusWarning : DesignSystem.Colors.statusHealthy)
                 VStack(spacing: DesignSystem.Spacing.tight) {
-                    ThermalGauge(value: cpuTemp, maxValue: 105.0, title: lang.tr("cpu_temp"), unit: "°C", statusColor: cpuStatusColor)
+                    if let cpuTemp = daemonManager.temperatures["CPU"] {
+                        let cpuStatusColor = cpuTemp > 80 ? DesignSystem.Colors.statusCritical : (cpuTemp > 65 ? DesignSystem.Colors.statusWarning : DesignSystem.Colors.statusHealthy)
+                        ThermalGauge(value: cpuTemp, maxValue: 105.0, title: lang.tr("cpu_temp"), unit: "°C", statusColor: cpuStatusColor)
+                    } else {
+                        UnavailableGauge(title: lang.tr("cpu_temp"))
+                    }
                 }
                 .padding(DesignSystem.Spacing.comfortable)
                 .frame(maxWidth: .infinity)
@@ -138,20 +157,25 @@ struct DashboardView: View {
                 
                 // Fan speed gauge
                 let fanRPMString = daemonManager.fanSpeed.replacingOccurrences(of: " RPM", with: "")
-                let fanRPM = Double(fanRPMString) ?? 0.0
                 VStack(spacing: DesignSystem.Spacing.tight) {
-                    ThermalGauge(value: fanRPM, maxValue: 6000.0, title: lang.tr("fan_speed"), unit: "RPM", statusColor: DesignSystem.Colors.accentBrand)
+                    if let fanRPM = Double(fanRPMString), fanRPM > 0 {
+                        ThermalGauge(value: fanRPM, maxValue: 6000.0, title: lang.tr("fan_speed"), unit: "RPM", statusColor: DesignSystem.Colors.accentBrand)
+                    } else {
+                        UnavailableGauge(title: lang.tr("fan_speed"))
+                    }
                 }
                 .padding(DesignSystem.Spacing.comfortable)
                 .frame(maxWidth: .infinity)
                 .glassCard()
                 
                 // Memory load gauge
-                let totalMem = daemonManager.memoryStats["total"] ?? 1.0
-                let usedMem = daemonManager.memoryStats["used"] ?? 0.0
-                let memPercent = totalMem > 0 ? (usedMem / totalMem) * 100 : 0
                 VStack(spacing: DesignSystem.Spacing.tight) {
-                    ThermalGauge(value: memPercent, maxValue: 100.0, title: lang.tr("memory"), unit: "%", statusColor: DesignSystem.Colors.accentAI)
+                    if let totalMem = daemonManager.memoryStats["total"],
+                       let usedMem = daemonManager.memoryStats["used"], totalMem > 0 {
+                        ThermalGauge(value: (usedMem / totalMem) * 100, maxValue: 100.0, title: lang.tr("memory"), unit: "%", statusColor: DesignSystem.Colors.accentAI)
+                    } else {
+                        UnavailableGauge(title: lang.tr("memory"))
+                    }
                 }
                 .padding(DesignSystem.Spacing.comfortable)
                 .frame(maxWidth: .infinity)
@@ -161,69 +185,64 @@ struct DashboardView: View {
             // Second Row of secondary metrics
             HStack(spacing: DesignSystem.Spacing.comfortable) {
                 // Network Down Rate Card
-                let downRate = (daemonManager.networkStats["down"] ?? 0) / 1024 / 1024
-                VStack(alignment: .leading, spacing: DesignSystem.Spacing.tight) {
-                    Text(lang.tr("network_down"))
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundColor(DesignSystem.Colors.textSecondary)
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text(String(format: "%.1f", downRate))
-                            .font(DesignSystem.Typography.dataHero)
-                            .foregroundColor(DesignSystem.Colors.textPrimary)
-                        Text("MB/s")
-                            .font(DesignSystem.Typography.dataCaption)
-                            .foregroundColor(DesignSystem.Colors.textSecondary)
-                    }
-                }
-                .padding(DesignSystem.Spacing.comfortable)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .glassCard()
+                metricValueCard(
+                    title: lang.tr("network_down"),
+                    value: daemonManager.networkStats["download"].map { $0 / 1024 / 1024 },
+                    format: "%.1f",
+                    unit: "MB/s"
+                )
                 
                 // Available Disk space card
-                let totalDisk = daemonManager.diskSpace["total"] ?? 1.0
-                let availDisk = daemonManager.diskSpace["available"] ?? 0.0
-                let freeGB = availDisk / 1_000_000_000
-                VStack(alignment: .leading, spacing: DesignSystem.Spacing.tight) {
-                    Text(lang.tr("free_storage"))
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundColor(DesignSystem.Colors.textSecondary)
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text(String(format: "%.0f", freeGB))
-                            .font(DesignSystem.Typography.dataHero)
-                            .foregroundColor(DesignSystem.Colors.textPrimary)
-                        Text("GB")
-                            .font(DesignSystem.Typography.dataCaption)
-                            .foregroundColor(DesignSystem.Colors.textSecondary)
-                    }
-                }
-                .padding(DesignSystem.Spacing.comfortable)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .glassCard()
+                metricValueCard(
+                    title: lang.tr("free_storage"),
+                    value: daemonManager.diskSpace["available"].map { $0 / 1_000_000_000 },
+                    format: "%.0f",
+                    unit: "GB"
+                )
                 
                 // Disk space usage percent card
-                let diskPercent = totalDisk > 0 ? ((totalDisk - availDisk) / totalDisk) * 100 : 0
-                VStack(alignment: .leading, spacing: DesignSystem.Spacing.tight) {
-                    Text(lang.tr("disk_used"))
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundColor(DesignSystem.Colors.textSecondary)
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text(String(format: "%.0f", diskPercent))
-                            .font(DesignSystem.Typography.dataHero)
-                            .foregroundColor(DesignSystem.Colors.textPrimary)
-                        Text("%")
-                            .font(DesignSystem.Typography.dataCaption)
-                            .foregroundColor(DesignSystem.Colors.textSecondary)
-                    }
-                }
-                .padding(DesignSystem.Spacing.comfortable)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .glassCard()
+                metricValueCard(
+                    title: lang.tr("disk_used"),
+                    value: diskUsagePercent,
+                    format: "%.0f",
+                    unit: "%"
+                )
             }
             
             // Third Row: Historical area graph
             thermalChart
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var diskUsagePercent: Double? {
+        guard let total = daemonManager.diskSpace["total"],
+              let available = daemonManager.diskSpace["available"],
+              total > 0 else { return nil }
+        return min(100, max(0, ((total - available) / total) * 100))
+    }
+
+    private func metricValueCard(title: String, value: Double?, format: String, unit: String) -> some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.tight) {
+            Text(title)
+                .font(DesignSystem.Typography.caption)
+                .foregroundColor(DesignSystem.Colors.textSecondary)
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value.map { String(format: format, $0) } ?? "—")
+                    .font(DesignSystem.Typography.dataHero)
+                    .foregroundColor(value == nil ? DesignSystem.Colors.textTertiary : DesignSystem.Colors.textPrimary)
+                if value != nil {
+                    Text(unit)
+                        .font(DesignSystem.Typography.dataCaption)
+                        .foregroundColor(DesignSystem.Colors.textSecondary)
+                }
+            }
+        }
+        .padding(DesignSystem.Spacing.comfortable)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(value.map { "\(title): \(String(format: format, $0)) \(unit)" } ?? "\(title): unavailable")
     }
     
     private var thermalChart: some View {
@@ -240,13 +259,16 @@ struct DashboardView: View {
     
     private var toolsGrid: some View {
         VStack(spacing: DesignSystem.Spacing.comfortable) {
-            ToolButton(title: lang.tr("smart_clean"), icon: "wand.and.stars", subtitle: lang.tr("purge_inactive_ram"), color: DesignSystem.Colors.accentBrand) {
-                showToast(lang.currentLanguage == "zh" ? "正在释放闲置运行内存..." : "Purging inactive memory...")
-                daemonManager.purgeMemory { success, _ in
-                    showToast(success ? (lang.currentLanguage == "zh" ? "内存释放成功！" : "Memory purged successfully!") : (lang.currentLanguage == "zh" ? "释放失败。" : "Failed to purge memory."))
-                }
+            ToolButton(
+                title: lang.currentLanguage == "zh" ? "查看可恢复缓存" : "Review Regenerable Caches",
+                icon: "trash.slash",
+                subtitle: lang.currentLanguage == "zh" ? "所有清理均为手动选择并移至废纸篓" : "Opt-in only; items move to Trash",
+                color: DesignSystem.Colors.accentBrand
+            ) {
+                selectedTab = "optimizer"
             }
-            
+
+            #if !APPSTORE
             ToolButton(
                 title: isMaxCooling ? (lang.currentLanguage == "zh" ? "强力散热: 开启" : "Max Cooling: ON") : lang.tr("max_cooling"),
                 icon: "wind",
@@ -262,27 +284,7 @@ struct DashboardView: View {
                     daemonManager.connect()?.resetFanToAutomatic { _ in }
                 }
             }
-            
-            ToolButton(
-                title: ecoModeEnabled ? (lang.currentLanguage == "zh" ? "环保限能: 开启" : "Eco: ON") : lang.tr("eco_mode"),
-                icon: "leaf.fill",
-                subtitle: ecoModeEnabled ? (lang.currentLanguage == "zh" ? "功耗已受限" : "Power Limited") : lang.tr("limit_cpu_power"),
-                color: ecoModeEnabled ? DesignSystem.Colors.statusHealthy : DesignSystem.Colors.textSecondary
-            ) {
-                ecoModeEnabled.toggle()
-                let statusMsg = ecoModeEnabled ? "Eco Mode Enabled: CPU power limited." : "Eco Mode Disabled: Performance restored."
-                showToast(statusMsg)
-                
-                daemonManager.setEcoMode(enabled: ecoModeEnabled) { success, error in
-                    if !success {
-                        print("Failed to set eco mode: \(error ?? "Unknown Error")")
-                        DispatchQueue.main.async {
-                            ecoModeEnabled.toggle() // Revert on failure
-                            showToast("Failed to toggle Eco Mode.")
-                        }
-                    }
-                }
-            }
+            #endif
             
             Spacer()
         }
@@ -508,17 +510,17 @@ struct DashboardView: View {
         .onAppear {
             daemonManager.startPolling()
             DiagnosticRuleEngine.shared.start()
-            AutoMaintenanceScheduler.shared.start()
         }
         .onDisappear {
             daemonManager.stopPolling()
             DiagnosticRuleEngine.shared.stop()
-            AutoMaintenanceScheduler.shared.stop()
         }
         .onChange(of: daemonManager.temperatures) { temps in
             withAnimation(.easeInOut(duration: 0.5)) {
                 if let cpu = temps["CPU"] {
-                    cpuHistory.removeFirst()
+                    if cpuHistory.count >= 30 {
+                        cpuHistory.removeFirst()
+                    }
                     cpuHistory.append(cpu)
                 }
             }

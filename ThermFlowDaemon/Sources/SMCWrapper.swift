@@ -62,7 +62,11 @@ public class SMCWrapper {
     private func open() {
         lock.lock()
         defer { lock.unlock() }
-        
+
+        openLocked()
+    }
+
+    private func openLocked() {
         if conn != 0 { return }
         
         // Try AppleSMCClient first (Apple Silicon M1/M2/M3/M4), then AppleSMC
@@ -89,7 +93,10 @@ public class SMCWrapper {
     }
     
     private func callSMC(index: UInt8, inputStruct: inout SMCParamStruct, outputStruct: inout SMCParamStruct) -> kern_return_t {
-        if conn == 0 { open() }
+        lock.lock()
+        defer { lock.unlock() }
+
+        if conn == 0 { openLocked() }
         guard conn != 0 else { return kIOReturnNotOpen }
         
         let inputStructSize = MemoryLayout<SMCParamStruct>.stride
@@ -140,6 +147,11 @@ public class SMCWrapper {
     public func writeValue(key: String, bytes: [UInt8]) -> Bool {
         let keyCode = stringToUInt32(key)
         guard let info = getKeyInfo(key: keyCode) else { return false }
+        guard info.dataSize > 0,
+              info.dataSize <= 32,
+              bytes.count == Int(info.dataSize) else {
+            return false
+        }
         
         var input = SMCParamStruct()
         var output = SMCParamStruct()
@@ -174,11 +186,16 @@ public class SMCWrapper {
     
     // MARK: - Fan & Temperature Helpers
     
-    public func readFanCount() -> Int {
-        if let bytes = readValue(key: "FNum"), !bytes.isEmpty {
-            return Int(bytes[0])
+    public func readFanCount() -> Int? {
+        guard let bytes = readValue(key: "FNum"), let first = bytes.first else {
+            return nil
         }
-        return 1
+
+        let count = Int(first)
+        guard (1...8).contains(count) else {
+            return nil
+        }
+        return count
     }
     
     public func readFanSpeed(key: String) -> Double? {
@@ -204,6 +221,8 @@ public class SMCWrapper {
     }
     
     public func writeFanSpeed(key: String, rpm: Double) -> Bool {
+        guard rpm.isFinite, rpm >= 0 else { return false }
+
         let keyCode = stringToUInt32(key)
         guard let info = getKeyInfo(key: keyCode) else { return false }
         
@@ -212,16 +231,22 @@ public class SMCWrapper {
         
         if typeStr == "flt " {
             var f = Float32(rpm)
+            guard f.isFinite else { return false }
             bytes = withUnsafeBytes(of: &f) { Array($0) }
         } else if typeStr == "fpe2" {
-            let intVal = UInt16(rpm * 4.0)
+            guard rpm <= Double(UInt16.max) / 4.0,
+                  let intVal = UInt16(exactly: Int(rpm * 4.0)) else {
+                return false
+            }
             bytes = [UInt8(intVal >> 8), UInt8(intVal & 0xFF)]
         } else if typeStr == "ui16" {
-            let intVal = UInt16(rpm)
+            guard rpm <= Double(UInt16.max),
+                  let intVal = UInt16(exactly: Int(rpm)) else {
+                return false
+            }
             bytes = [UInt8(intVal >> 8), UInt8(intVal & 0xFF)]
         } else {
-            var f = Float32(rpm)
-            bytes = withUnsafeBytes(of: &f) { Array($0) }
+            return false
         }
         
         return writeValue(key: key, bytes: bytes)

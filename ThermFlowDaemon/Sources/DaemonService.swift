@@ -1,23 +1,31 @@
 import Foundation
+import OSLog
 
-class DaemonService: NSObject, CoolCumberDaemonProtocol {
-    private static var manualFanRPM: Int? = nil
+final class DaemonService: NSObject, CoolCumberDaemonProtocol {
+    private static let disabledForSecurity = "disabled for security"
+    private static let absoluteFanRPMRange = 1_000...8_000
 
-    private func logToDisk(_ message: String) {
-        let logMessage = "\(Date()): \(message)\n"
-        if let data = logMessage.data(using: .utf8) {
-            if let fileHandle = FileHandle(forWritingAtPath: "/tmp/daemon.log") {
-                fileHandle.seekToEndOfFile()
-                fileHandle.write(data)
-                fileHandle.closeFile()
-            } else {
-                try? data.write(to: URL(fileURLWithPath: "/tmp/daemon.log"))
-            }
-        }
+    private let logger = Logger(subsystem: "com.slmcamp.CoolCumber.helper", category: "service")
+    private let fanControlLock = NSLock()
+    private var didManuallyControlFan = false
+
+    private func log(_ message: String) {
+        logger.info("\(message, privacy: .private)")
     }
 
-    private var simulatedThermalBase: Double = 42.0
-    private var lastTempFetchTime: Date = Date()
+    func connectionInvalidated() {
+        fanControlLock.lock()
+        defer { fanControlLock.unlock() }
+
+        guard didManuallyControlFan else { return }
+        let restored = resetFansToAutomatic()
+        if restored {
+            didManuallyControlFan = false
+            logger.notice("Restored automatic fan control after XPC invalidation")
+        } else {
+            logger.fault("Failed to restore automatic fan control after XPC invalidation")
+        }
+    }
     
     func readTemperatures(reply: @escaping ([String : Double]) -> Void) {
         var temps: [String: Double] = [:]
@@ -77,117 +85,132 @@ class DaemonService: NSObject, CoolCumberDaemonProtocol {
                     }
                 }
             } catch {
-                logToDisk("Powermetrics error: \(error)")
+                log("Powermetrics error: \(error.localizedDescription)")
             }
         }
-        
-        // 3. Dynamic Real-Time Thermal Model Fallback (Smoothly responds to CPU load rather than static 50°C)
-        if temps["CPU"] == nil {
-            var cpuLoadPercent: Double = 0
-            // Quick mach load read
-            var cpuInfo: processor_info_array_t?
-            var numCpuInfo: mach_msg_type_number_t = 0
-            var numCPUsU: natural_t = 0
-            let err = host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &numCPUsU, &cpuInfo, &numCpuInfo)
-            if err == KERN_SUCCESS, let info = cpuInfo {
-                cpuLoadPercent = 15.0 // baseline active
-                vm_deallocate(mach_task_self_, vm_address_t(bitPattern: info), vm_size_t(numCpuInfo * UInt32(MemoryLayout<integer_t>.size)))
-            }
-            
-            // Dynamic thermal inertia simulation
-            let now = Date()
-            let dt = min(now.timeIntervalSince(lastTempFetchTime), 5.0)
-            lastTempFetchTime = now
-            
-            let targetTemp = 39.0 + (cpuLoadPercent * 0.35) + Double.random(in: -0.4...0.4)
-            simulatedThermalBase += (targetTemp - simulatedThermalBase) * min(1.0, dt * 0.4)
-            
-            temps["CPU"] = round(simulatedThermalBase * 10) / 10
-            temps["GPU"] = round((simulatedThermalBase - 3.5) * 10) / 10
-        }
-        
-        if temps["GPU"] == nil, let cpu = temps["CPU"] {
-            temps["GPU"] = max(30.0, cpu - 4.0)
-        }
-        
+
         reply(temps)
     }
     
     func setFanSpeed(fanIndex: Int, rpm: Int, reply: @escaping (Bool, String?) -> Void) {
+        fanControlLock.lock()
+        defer { fanControlLock.unlock() }
+
         let smc = SMCWrapper.shared
-        let fanCount = smc.readFanCount()
-        var anySuccess = false
-        
-        // Determine fan range: if fanIndex < fanCount, apply to all or specified
-        let targetFans = (fanIndex == 0 && fanCount > 1) ? Array(0..<fanCount) : [fanIndex]
-        
-        for idx in targetFans {
-            // 1. Set Fan Mode to Manual (1)
-            let mdSuccess = smc.writeValue(key: "F\(idx)Md", bytes: [1])
-            
-            // 2. Set Target RPM (F*Tg)
-            let tgSuccess = smc.writeFanSpeed(key: "F\(idx)Tg", rpm: Double(rpm))
-            
-            // 3. Set Minimum RPM (F*Mn) - Essential on Apple Silicon to force fan spin
-            let mnSuccess = smc.writeFanSpeed(key: "F\(idx)Mn", rpm: Double(rpm))
-            
-            if mdSuccess || tgSuccess || mnSuccess {
-                anySuccess = true
-            }
-            logToDisk("SetFanSpeed Fan\(idx): Mode=\(mdSuccess), Target(\(rpm))=\(tgSuccess), Min=\(mnSuccess)")
+        guard let fanCount = smc.readFanCount() else {
+            reply(false, "Fan hardware is unavailable")
+            return
         }
-        
-        // Also write FS! bitmask for older SMC architectures
-        let mask = UInt16((1 << fanCount) - 1)
+        guard fanIndex >= 0, fanIndex < fanCount else {
+            reply(false, "Invalid fan index")
+            return
+        }
+        guard Self.absoluteFanRPMRange.contains(rpm) else {
+            reply(false, "Requested RPM is outside the absolute safety range")
+            return
+        }
+
+        // Preserve the existing API convention: index 0 targets all fans on a
+        // multi-fan Mac, while every other valid index targets one fan.
+        let targetFans = (fanIndex == 0 && fanCount > 1) ? Array(0..<fanCount) : [fanIndex]
+        for idx in targetFans {
+            guard let minimum = smc.readFanSpeed(key: "F\(idx)Mn"),
+                  let maximum = smc.readFanSpeed(key: "F\(idx)Mx"),
+                  minimum.isFinite,
+                  maximum.isFinite,
+                  minimum >= 0,
+                  maximum > minimum,
+                  maximum <= 10_000,
+                  Double(rpm) >= minimum,
+                  Double(rpm) <= maximum else {
+                reply(false, "Requested RPM is outside the fan's reported hardware range")
+                return
+            }
+        }
+
+        var allWritesSucceeded = true
+        var madeManualChanges = false
+        for idx in targetFans {
+            let mdSuccess = smc.writeValue(key: "F\(idx)Md", bytes: [1])
+            let tgSuccess = smc.writeFanSpeed(key: "F\(idx)Tg", rpm: Double(rpm))
+            let readback = smc.readFanSpeed(key: "F\(idx)Tg")
+            let readbackMatches = readback.map { abs($0 - Double(rpm)) <= 25.0 } ?? false
+            madeManualChanges = madeManualChanges || mdSuccess || tgSuccess
+            allWritesSucceeded = allWritesSucceeded && mdSuccess && tgSuccess && readbackMatches
+            log("SetFanSpeed fan=\(idx), mode=\(mdSuccess), target=\(tgSuccess), readback=\(readbackMatches)")
+        }
+
+        let mask = targetFans.reduce(UInt16(0)) { partial, idx in
+            partial | (UInt16(1) << UInt16(idx))
+        }
         let maskBytes: [UInt8] = [UInt8(mask >> 8), UInt8(mask & 0xFF)]
-        _ = smc.writeValue(key: "FS! ", bytes: maskBytes)
-        
-        if anySuccess {
-            DaemonService.manualFanRPM = rpm
+        let maskSuccess = smc.writeValue(key: "FS! ", bytes: maskBytes)
+        madeManualChanges = madeManualChanges || maskSuccess
+        allWritesSucceeded = allWritesSucceeded && maskSuccess
+
+        if allWritesSucceeded {
+            didManuallyControlFan = true
             reply(true, nil)
         } else {
-            reply(false, "Failed to apply fan speed to SMC")
+            didManuallyControlFan = madeManualChanges
+            let rollbackSucceeded = resetFansToAutomatic()
+            if rollbackSucceeded {
+                didManuallyControlFan = false
+            }
+            logger.error("Fan control transaction failed; automatic rollback success=\(rollbackSucceeded, privacy: .public)")
+            reply(false, "Failed to apply and verify fan speed")
         }
     }
     
     func resetFanToAutomatic(reply: @escaping (Bool) -> Void) {
-        let smc = SMCWrapper.shared
-        let fanCount = smc.readFanCount()
-        var anySuccess = false
-        
-        for idx in 0..<max(1, fanCount) {
-            let mdSuccess = smc.writeValue(key: "F\(idx)Md", bytes: [0])
-            let mnSuccess = smc.writeFanSpeed(key: "F\(idx)Mn", rpm: 1200.0)
-            if mdSuccess || mnSuccess { anySuccess = true }
+        fanControlLock.lock()
+        defer { fanControlLock.unlock() }
+
+        let success = resetFansToAutomatic()
+        if success {
+            didManuallyControlFan = false
         }
-        
-        _ = smc.writeValue(key: "FS! ", bytes: [0, 0])
-        logToDisk("ResetFanToAutomatic: fanCount=\(fanCount), success=\(anySuccess)")
-        
-        DaemonService.manualFanRPM = nil
-        reply(anySuccess || true)
+        reply(success)
     }
     
     func readFanSpeeds(reply: @escaping ([Int]) -> Void) {
         let smc = SMCWrapper.shared
-        let fanCount = smc.readFanCount()
+        guard let fanCount = smc.readFanCount() else {
+            reply([])
+            return
+        }
         var speeds: [Int] = []
-        
-        for idx in 0..<max(1, fanCount) {
-            if let rpm = smc.readFanSpeed(key: "F\(idx)Ac"), Int(rpm) > 0 {
-                speeds.append(Int(rpm))
+
+        for idx in 0..<fanCount {
+            guard let rpm = smc.readFanSpeed(key: "F\(idx)Ac"),
+                  rpm.isFinite,
+                  rpm >= 0,
+                  rpm <= 10_000 else {
+                reply([])
+                return
             }
+            speeds.append(Int(rpm.rounded()))
         }
-        
-        if speeds.isEmpty {
-            reply([0])
-        } else {
-            reply(speeds)
+        reply(speeds)
+    }
+
+    private func resetFansToAutomatic() -> Bool {
+        let smc = SMCWrapper.shared
+        guard let fanCount = smc.readFanCount() else {
+            return false
         }
+
+        var allWritesSucceeded = true
+        for idx in 0..<fanCount {
+            allWritesSucceeded = smc.writeValue(key: "F\(idx)Md", bytes: [0]) && allWritesSucceeded
+        }
+        allWritesSucceeded = smc.writeValue(key: "FS! ", bytes: [0, 0]) && allWritesSucceeded
+        log("ResetFanToAutomatic fanCount=\(fanCount), success=\(allWritesSucceeded)")
+        return allWritesSucceeded
     }
     
     func readThermalPressure(reply: @escaping (String) -> Void) {
-        logToDisk("readThermalPressure called")
+        log("readThermalPressure called")
         
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/powermetrics")
@@ -211,7 +234,7 @@ class DaemonService: NSObject, CoolCumberDaemonProtocol {
                 }
             }
         } catch {
-            logToDisk("Failed to run powermetrics for thermal pressure: \(error)")
+            log("Failed to run powermetrics for thermal pressure: \(error.localizedDescription)")
         }
         
         // Fallback to unified thermal pressure if powermetrics smc isn't complete
@@ -233,22 +256,6 @@ class DaemonService: NSObject, CoolCumberDaemonProtocol {
         return nil
     }
     
-    private func getConsoleUserUID() -> uid_t {
-        var statInfo = stat()
-        if stat("/dev/console", &statInfo) == 0 {
-            return statInfo.st_uid
-        }
-        return 501 // fallback
-    }
-    
-    private func getAppBundlePath(fromProgram program: String) -> String? {
-        let components = program.components(separatedBy: "/")
-        if let appIndex = components.firstIndex(where: { $0.hasSuffix(".app") }) {
-            return components[0...appIndex].joined(separator: "/")
-        }
-        return nil
-    }
-
     func listLaunchDaemons(reply: @escaping ([[String : Any]]) -> Void) {
         var results: [[String: Any]] = []
         let fm = FileManager.default
@@ -298,121 +305,13 @@ class DaemonService: NSObject, CoolCumberDaemonProtocol {
     }
     
     func bootoutDaemon(label: String, reply: @escaping (Bool, String?) -> Void) {
-        if label.hasPrefix("com.apple.") || label.hasPrefix("com.coolcumber.") {
-            reply(false, "Security violation: cannot bootout system services.")
-            return
-        }
-        
-        let uid = getConsoleUserUID()
-        let systemTarget = "system/\(label)"
-        let guiTarget = "gui/\(uid)/\(label)"
-        
-        func runBootout(target: String) -> (Int32, String) {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-            p.arguments = ["bootout", target]
-            let pipe = Pipe()
-            p.standardError = pipe
-            p.standardOutput = pipe
-            try? p.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            p.waitUntilExit()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            return (p.terminationStatus, output)
-        }
-        
-        let (statusSystem, errSystem) = runBootout(target: systemTarget)
-        if statusSystem == 0 {
-            reply(true, nil)
-            return
-        }
-        
-        let (statusGui, errGui) = runBootout(target: guiTarget)
-        if statusGui == 0 {
-            reply(true, nil)
-            return
-        }
-        
-        reply(false, "Failed to bootout system (\(errSystem.trimmingCharacters(in: .whitespacesAndNewlines))) and gui (\(errGui.trimmingCharacters(in: .whitespacesAndNewlines)))")
+        logger.warning("Blocked bootoutDaemon request")
+        reply(false, Self.disabledForSecurity)
     }
     
     func disableLaunchAgent(plistPath: String, reply: @escaping (Bool, String?) -> Void) {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: plistPath) else {
-            reply(false, "Plist file does not exist at path: \(plistPath)")
-            return
-        }
-        
-        // Parse plist to get label and program path
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: plistPath)),
-              let dict = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] else {
-            reply(false, "Failed to parse plist file.")
-            return
-        }
-        
-        let label = dict["Label"] as? String ?? ""
-        if label.hasPrefix("com.apple.") || label.hasPrefix("com.coolcumber.") {
-            reply(false, "Security violation: cannot touch system services.")
-            return
-        }
-        
-        // 1. Bootout the daemon/agent if it is running
-        if !label.isEmpty {
-            let uid = getConsoleUserUID()
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-            p.arguments = ["bootout", "system/\(label)"]
-            try? p.run()
-            p.waitUntilExit()
-            
-            let p2 = Process()
-            p2.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-            p2.arguments = ["bootout", "gui/\(uid)/\(label)"]
-            try? p2.run()
-            p2.waitUntilExit()
-        }
-        
-        // 2. Move the associated .app to Trash if found
-        var program = dict["Program"] as? String
-        if program == nil, let args = dict["ProgramArguments"] as? [String], !args.isEmpty {
-            program = args[0]
-        }
-        
-        var trashMessage = ""
-        if let prog = program, let appPath = getAppBundlePath(fromProgram: prog) {
-            if fm.fileExists(atPath: appPath) {
-                if let consoleHome = getConsoleUserHome() {
-                    let trashPath = "\(consoleHome)/.Trash/\(URL(fileURLWithPath: appPath).lastPathComponent)"
-                    try? fm.removeItem(atPath: trashPath) // remove existing if any
-                    do {
-                        try fm.moveItem(atPath: appPath, toPath: trashPath)
-                        trashMessage = " Associated app moved to trash."
-                    } catch {
-                        trashMessage = " Failed to move app to trash: \(error.localizedDescription)."
-                    }
-                }
-            }
-        }
-        
-        // 3. Move the plist itself to trash
-        if let consoleHome = getConsoleUserHome() {
-            let trashPlistPath = "\(consoleHome)/.Trash/\(URL(fileURLWithPath: plistPath).lastPathComponent)"
-            try? fm.removeItem(atPath: trashPlistPath)
-            do {
-                try fm.moveItem(atPath: plistPath, toPath: trashPlistPath)
-                reply(true, "Successfully uninstalled daemon/agent.\(trashMessage)")
-            } catch {
-                reply(false, "Failed to move plist to trash: \(error.localizedDescription).\(trashMessage)")
-            }
-        } else {
-            // Fallback to direct deletion if user home is not found
-            do {
-                try fm.removeItem(atPath: plistPath)
-                reply(true, "Successfully deleted plist.\(trashMessage)")
-            } catch {
-                reply(false, "Failed to delete plist: \(error.localizedDescription).\(trashMessage)")
-            }
-        }
+        logger.warning("Blocked disableLaunchAgent request")
+        reply(false, Self.disabledForSecurity)
     }
     
     func readSMARTData(reply: @escaping ([String : Any]) -> Void) {
@@ -450,7 +349,7 @@ class DaemonService: NSObject, CoolCumberDaemonProtocol {
     }
     
     func readDiskIOStats(reply: @escaping ([String : Double]) -> Void) {
-        logToDisk("readDiskIOStats called")
+        log("readDiskIOStats called")
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/sbin/iostat")
         p.arguments = ["-d", "-c", "2", "-w", "1"]
@@ -462,7 +361,7 @@ class DaemonService: NSObject, CoolCumberDaemonProtocol {
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             p.waitUntilExit()
             let output = String(data: data, encoding: .utf8) ?? ""
-            logToDisk("readDiskIOStats finished, output length: \(output.count)")
+            log("readDiskIOStats finished, output length: \(output.count)")
             
             var result: [String: Double] = [:]
             let lines = output.components(separatedBy: .newlines).filter { !$0.isEmpty }
@@ -477,7 +376,7 @@ class DaemonService: NSObject, CoolCumberDaemonProtocol {
             }
             reply(result)
         } catch {
-            logToDisk("readDiskIOStats error: \(error)")
+            log("readDiskIOStats error: \(error.localizedDescription)")
             reply([:])
         }
     }
@@ -521,32 +420,26 @@ class DaemonService: NSObject, CoolCumberDaemonProtocol {
                     }
                 }
                 
-                // Fallback defaults if not found
-                if stats["cycleCount"] == nil { stats["cycleCount"] = 120 }
-                if stats["maxCapacityPercent"] == nil { stats["maxCapacityPercent"] = 92 }
-                if stats["condition"] == nil { stats["condition"] = "Normal" }
-                
                 reply(stats)
                 return
             }
         } catch {
-            logToDisk("readBatteryHealth error: \(error.localizedDescription)")
+            log("readBatteryHealth error: \(error.localizedDescription)")
         }
-        
-        // Return default dict on failure
-        reply([
-            "cycleCount": 120,
-            "maxCapacityPercent": 92,
-            "condition": "Normal"
-        ])
+
+        reply([:])
     }
     
     func setBatteryChargeLimit(percent: Int, reply: @escaping (Bool, String?) -> Void) {
+        guard (20...100).contains(percent), let limit = UInt8(exactly: percent) else {
+            reply(false, "Battery charge limit must be between 20 and 100 percent")
+            return
+        }
+
         let smc = SMCWrapper.shared
         // BCLM is typically a 1-byte value (ui8) representing the percentage
-        let limit = UInt8(max(20, min(100, percent)))
         let success = smc.writeValue(key: "BCLM", bytes: [limit])
-        logToDisk("setBatteryChargeLimit to \(limit), success=\(success)")
+        log("setBatteryChargeLimit success=\(success)")
         if success {
             reply(true, nil)
         } else {
@@ -555,55 +448,8 @@ class DaemonService: NSObject, CoolCumberDaemonProtocol {
     }
     
     func runMaintenance(type: String, reply: @escaping (Bool, String?) -> Void) {
-        logToDisk("runMaintenance called with type: \(type)")
-        let p = Process()
-        
-        // Output is not captured because grandchild processes (like mdworker)
-        // can keep the pipe open and cause readDataToEndOfFile to deadlock.
-        
-        switch type {
-        case "spotlight":
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/mdutil")
-            p.arguments = ["-E", "/"]
-        case "dns":
-            p.executableURL = URL(fileURLWithPath: "/bin/sh")
-            p.arguments = ["-c", "dscacheutil -flushcache && killall -HUP mDNSResponder"]
-        case "memory":
-            DispatchQueue.global().async {
-                let task = Process()
-                task.executableURL = URL(fileURLWithPath: "/usr/bin/memory_pressure")
-                task.arguments = ["-l", "critical"]
-                try? task.run()
-                usleep(2_000_000) // Allow 2 seconds for OS to compress inactive memory
-                task.terminate()
-                self.logToDisk("runMaintenance memory purge completed")
-            }
-            reply(true, "Memory purge initiated")
-            return
-            
-        case "compress":
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/memory_pressure")
-            p.arguments = ["-S", "-l", "critical"]
-        default:
-            logToDisk("runMaintenance unknown type")
-            reply(false, "Unknown maintenance task.")
-            return
-        }
-        
-        // For non-memory tasks, run synchronously
-        do {
-            try p.run()
-            p.waitUntilExit()
-            logToDisk("runMaintenance finished, status: \(p.terminationStatus)")
-            if p.terminationStatus == 0 {
-                reply(true, "Maintenance task executed successfully.")
-            } else {
-                reply(false, "Maintenance task failed with status \(p.terminationStatus).")
-            }
-        } catch {
-            logToDisk("runMaintenance error: \(error)")
-            reply(false, error.localizedDescription)
-        }
+        logger.warning("Blocked runMaintenance request")
+        reply(false, Self.disabledForSecurity)
     }
     
     // --- CoolCumber v2.0 Phase 1 Additions ---
@@ -722,11 +568,18 @@ class DaemonService: NSObject, CoolCumberDaemonProtocol {
     }
     
     func purgeMemory(reply: @escaping (Bool, String?) -> Void) {
-        runMaintenance(type: "memory", reply: reply)
+        logger.warning("Blocked purgeMemory request")
+        reply(false, Self.disabledForSecurity)
     }
 
     // --- Process Analysis ---
     func readTopProcesses(count: Int, reply: @escaping ([[String: Any]]) -> Void) {
+        guard (1...100).contains(count) else {
+            logger.warning("Rejected readTopProcesses request with invalid count")
+            reply([])
+            return
+        }
+
         let task = Process()
         task.launchPath = "/bin/ps"
         task.arguments = ["-axo", "pid,pcpu,pmem,comm", "-r"]
@@ -778,6 +631,12 @@ class DaemonService: NSObject, CoolCumberDaemonProtocol {
     }
     
     func readTopMemoryProcesses(count: Int, reply: @escaping ([[String: Any]]) -> Void) {
+        guard (1...100).contains(count) else {
+            logger.warning("Rejected readTopMemoryProcesses request with invalid count")
+            reply([])
+            return
+        }
+
         let task = Process()
         task.launchPath = "/bin/ps"
         task.arguments = ["-axo", "pid,pcpu,rss,comm", "-m"]
@@ -829,87 +688,17 @@ class DaemonService: NSObject, CoolCumberDaemonProtocol {
     }
     
     func killProcess(pid: Int32, reply: @escaping (Bool, String?) -> Void) {
-        let result = kill(pid, SIGKILL)
-        if result == 0 {
-            reply(true, nil)
-        } else {
-            let errStr = String(cString: strerror(errno))
-            reply(false, errStr)
-        }
+        logger.warning("Blocked killProcess request")
+        reply(false, Self.disabledForSecurity)
     }
     
     func setEcoMode(enabled: Bool, reply: @escaping (Bool, String?) -> Void) {
-        let mode = enabled ? "1" : "0"
-        let task = Process()
-        task.launchPath = "/usr/bin/pmset"
-        task.arguments = ["-a", "lowpowermode", mode]
-        
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-        
-        do {
-            try task.run()
-            task.waitUntilExit()
-            if task.terminationStatus == 0 {
-                reply(true, nil)
-            } else {
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                let errorOutput = String(data: data, encoding: .utf8)
-                reply(false, "pmset failed: \(errorOutput ?? "Unknown error")")
-            }
-        } catch {
-            reply(false, "Failed to run pmset: \(error)")
-        }
+        logger.warning("Blocked setEcoMode request")
+        reply(false, Self.disabledForSecurity)
     }
     
     func manageProcessState(pid: Int32, action: String, reply: @escaping (Bool, String?) -> Void) {
-        logToDisk("manageProcessState pid:\(pid) action:\(action)")
-        
-        switch action {
-        case "freeze":
-            // Send SIGSTOP to the entire process group first, fallback to single process
-            _ = kill(-pid, SIGSTOP)
-            if kill(pid, SIGSTOP) == 0 {
-                reply(true, nil)
-            } else {
-                reply(false, "Failed to send SIGSTOP")
-            }
-            
-        case "unfreeze":
-            // Send SIGCONT to the entire process group first, fallback to single process
-            _ = kill(-pid, SIGCONT)
-            if kill(pid, SIGCONT) == 0 {
-                reply(true, nil)
-            } else {
-                reply(false, "Failed to send SIGCONT")
-            }
-        case "throttle":
-            // Run taskpolicy -b -p PID
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/taskpolicy")
-            p.arguments = ["-b", "-p", "\(pid)"]
-            do {
-                try p.run()
-                p.waitUntilExit()
-                reply(p.terminationStatus == 0, nil)
-            } catch {
-                reply(false, error.localizedDescription)
-            }
-        case "unthrottle":
-            // Run taskpolicy -B -p PID
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/taskpolicy")
-            p.arguments = ["-B", "-p", "\(pid)"]
-            do {
-                try p.run()
-                p.waitUntilExit()
-                reply(p.terminationStatus == 0, nil)
-            } catch {
-                reply(false, error.localizedDescription)
-            }
-        default:
-            reply(false, "Unknown action: \(action)")
-        }
+        logger.warning("Blocked manageProcessState request")
+        reply(false, Self.disabledForSecurity)
     }
 }

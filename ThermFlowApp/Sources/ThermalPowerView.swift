@@ -11,9 +11,9 @@ struct ThermalPowerView: View {
     @State private var isBclmEnabled = false
     @State private var bclmLimit = 80
     @State private var batteryStatusText: String = ""
-    @State private var cycleCount = 0
-    @State private var currentHealth = 100
-    @State private var condition = "Normal"
+    @State private var cycleCount: Int?
+    @State private var currentHealth: Int?
+    @State private var condition: String?
     @State private var prediction: BatteryPrediction?
     
     // App Freezer States
@@ -119,7 +119,7 @@ struct ThermalPowerView: View {
                             Text(lang.currentLanguage == "zh" ? "当前:" : "Current:")
                                 .font(DesignSystem.Typography.body)
                                 .foregroundColor(DesignSystem.Colors.textSecondary)
-                            Text("\(coolingVM.currentRPM)")
+                            Text(coolingVM.currentRPM.map(String.init) ?? "—")
                                 .font(DesignSystem.Typography.dataHeadline)
                                 .foregroundColor(DesignSystem.Colors.accentBrand)
                             Text("RPM")
@@ -207,9 +207,9 @@ struct ThermalPowerView: View {
                             Text(lang.currentLanguage == "zh" ? "当前容量健康度" : "Current Health")
                                 .font(DesignSystem.Typography.caption)
                                 .foregroundColor(DesignSystem.Colors.textSecondary)
-                            Text("\(currentHealth)%")
+                            Text(currentHealth.map { "\($0)%" } ?? "—")
                                 .font(DesignSystem.Typography.dataHero)
-                                .foregroundColor(currentHealth > 80 ? DesignSystem.Colors.statusHealthy : DesignSystem.Colors.statusWarning)
+                                .foregroundColor(currentHealth.map { $0 > 80 ? DesignSystem.Colors.statusHealthy : DesignSystem.Colors.statusWarning } ?? DesignSystem.Colors.textTertiary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         
@@ -217,7 +217,7 @@ struct ThermalPowerView: View {
                             Text(lang.currentLanguage == "zh" ? "电池循环次数" : "Cycle Count")
                                 .font(DesignSystem.Typography.caption)
                                 .foregroundColor(DesignSystem.Colors.textSecondary)
-                            Text("\(cycleCount)")
+                            Text(cycleCount.map(String.init) ?? "—")
                                 .font(DesignSystem.Typography.dataHero)
                                 .foregroundColor(DesignSystem.Colors.textPrimary)
                         }
@@ -227,9 +227,9 @@ struct ThermalPowerView: View {
                             Text(lang.currentLanguage == "zh" ? "运行状况工况" : "Condition")
                                 .font(DesignSystem.Typography.caption)
                                 .foregroundColor(DesignSystem.Colors.textSecondary)
-                            Text(condition == "Normal" ? (lang.currentLanguage == "zh" ? "良好" : "Normal") : (lang.currentLanguage == "zh" ? "服务维保" : "Service"))
+                            Text(condition.map { $0 == "Normal" ? (lang.currentLanguage == "zh" ? "良好" : "Normal") : (lang.currentLanguage == "zh" ? "服务维保" : "Service") } ?? (lang.currentLanguage == "zh" ? "不可用" : "Unavailable"))
                                 .font(DesignSystem.Typography.title)
-                                .foregroundColor(condition == "Normal" ? DesignSystem.Colors.statusHealthy : DesignSystem.Colors.statusCritical)
+                                .foregroundColor(condition.map { $0 == "Normal" ? DesignSystem.Colors.statusHealthy : DesignSystem.Colors.statusCritical } ?? DesignSystem.Colors.textTertiary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -375,15 +375,21 @@ struct ThermalPowerView: View {
     private func fetchBatteryData() {
         DaemonManager.shared.readBatteryHealth { stats in
             DispatchQueue.main.async {
-                self.cycleCount = stats["cycleCount"] as? Int ?? 120
-                self.currentHealth = stats["maxCapacityPercent"] as? Int ?? 92
-                self.condition = stats["condition"] as? String ?? "Normal"
-                
-                self.prediction = BatteryHealthPredictor.predict(
-                    cycleCount: self.cycleCount,
-                    maxCapacityPercent: self.currentHealth,
-                    condition: self.condition
-                )
+                self.cycleCount = stats["cycleCount"] as? Int
+                self.currentHealth = stats["maxCapacityPercent"] as? Int
+                self.condition = stats["condition"] as? String
+
+                if let cycleCount = self.cycleCount,
+                   let currentHealth = self.currentHealth,
+                   let condition = self.condition {
+                    self.prediction = BatteryHealthPredictor.predict(
+                        cycleCount: cycleCount,
+                        maxCapacityPercent: currentHealth,
+                        condition: condition
+                    )
+                } else {
+                    self.prediction = nil
+                }
             }
         }
     }
@@ -397,11 +403,15 @@ struct ThermalPowerView: View {
                     UserDefaults.standard.set(bclmLimit, forKey: "bclm_limit")
                     self.batteryStatusText = LanguageManager.shared.tr("smc_applied")
                     
-                    self.prediction = BatteryHealthPredictor.predict(
-                        cycleCount: self.cycleCount,
-                        maxCapacityPercent: self.currentHealth,
-                        condition: self.condition
-                    )
+                    if let cycleCount = self.cycleCount,
+                       let currentHealth = self.currentHealth,
+                       let condition = self.condition {
+                        self.prediction = BatteryHealthPredictor.predict(
+                            cycleCount: cycleCount,
+                            maxCapacityPercent: currentHealth,
+                            condition: condition
+                        )
+                    }
                 } else {
                     self.batteryStatusText = error ?? LanguageManager.shared.tr("smc_failed")
                 }
@@ -418,7 +428,7 @@ struct ThermalPowerView: View {
 
 // MARK: - CoolingViewModel
 class CoolingViewModel: ObservableObject {
-    @Published var currentRPM: Int = 1800
+    @Published var currentRPM: Int?
     @Published var statusMessage: String?
     
     private var timer: Timer?
@@ -445,6 +455,8 @@ class CoolingViewModel: ObservableObject {
             DispatchQueue.main.async {
                 if let first = speeds.first {
                     self?.currentRPM = first
+                } else {
+                    self?.currentRPM = nil
                 }
             }
         }
@@ -511,4 +523,3 @@ struct FlowLayout: Layout {
         }
     }
 }
-
