@@ -53,3 +53,22 @@ playground.xcworkspace
 MacThermFlow.xcodeproj/
 CoolCumber.dmg
 build_mas/
+
+# Secrets and local release credentials
+.env
+.env.*
+!.env.example
+App-Specific Passwords.md
+*.p8
+*.p12
+*.provisionprofile
+*.cer
+*.certSigningRequest
+
+# Local release artifacts (publish these through Releases/App Store Connect)
+*.xcarchive/
+*.pkg
+*.zip
+*.dmg
+fastlane/report.xml
+fastlane/test_output/
