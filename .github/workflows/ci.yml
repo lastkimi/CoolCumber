@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secret-scan:
+    name: Secret and artifact scan
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Reject credentials and release artifacts in Git
+        run: Scripts/ci-secret-scan.sh
+
+  core-tests:
+    name: ThermFlowCore tests
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Show Swift version
+        run: swift --version
+      - name: Run core unit tests
+        run: swift test --package-path Packages/ThermFlowCore
+
+  unsigned-builds:
+    name: Direct and Mac App Store unsigned builds
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Show build tool versions
+        run: |
+          xcodebuild -version
+          xcodegen --version
+      - name: Generate project and build both channels
+        run: Scripts/build-unsigned.sh "${RUNNER_TEMP}/coolcumber-derived-data"
