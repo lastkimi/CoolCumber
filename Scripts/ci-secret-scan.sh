@@ -53,9 +53,11 @@ if [ "$found_forbidden_path" -ne 0 ]; then
     exit 1
 fi
 
-# Print filenames only. Secret values must never be echoed into CI logs.
-content_pattern='-----BEGIN ([A-Z0-9 ]* )?PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{36,}'
-if git grep --cached -I -l -E -e "$content_pattern" -- . > "$matches_file"; then
+# Print filenames only. Secret values must never be echoed into CI logs. These
+# patterns intentionally target provider-specific prefixes to keep the gate
+# useful without dumping high-entropy candidates or producing broad matches.
+content_pattern='-----BEGIN ([A-Z0-9 ]* )?PRIVATE KEY-----|-----BEGIN PGP PRIVATE KEY BLOCK-----|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,}|glpat-[A-Za-z0-9_-]{20,}|sk-(proj-|svcacct-)?[A-Za-z0-9_-]{20,}|[sr]k_(live|test)_[A-Za-z0-9]{16,}|xox[baprs]-[A-Za-z0-9-]{20,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|ya29\.[0-9A-Za-z_-]{30,}|npm_[A-Za-z0-9]{30,}|pypi-AgEIcH[A-Za-z0-9_-]{40,}|hf_[A-Za-z0-9]{30,}|dop_v1_[0-9a-fA-F]{64}|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{32,}'
+if git grep --cached -I -l -E -e "$content_pattern" -- . ':!Scripts/ci-secret-scan.sh' > "$matches_file"; then
     printf '%s\n' 'Potential secret material found in tracked files:' >&2
     sed 's/^/  - /' "$matches_file" >&2
     printf '%s\n' 'Secret scan failed. Remove the material from Git and rotate any credential that was exposed.' >&2
@@ -72,7 +74,7 @@ fi
 # placeholder. Inspect candidate blobs without ever printing their contents and
 # reject every other value with the same app-specific-password shape.
 app_password_pattern='[a-z0-9]{4}(-[a-z0-9]{4}){3}'
-if git grep --cached -I -l -E -e "$app_password_pattern" -- . > "$app_password_candidates"; then
+if git grep --cached -I -l -E -e "$app_password_pattern" -- . ':!Scripts/ci-secret-scan.sh' > "$app_password_candidates"; then
     while IFS= read -r candidate_path; do
         if git show ":$candidate_path" | perl -0777 -e '
             my $content = do { local $/; <STDIN> };

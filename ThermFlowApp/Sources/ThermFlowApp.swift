@@ -3,6 +3,10 @@ import AppKit
 
 // MARK: - Application lifecycle
 
+private enum ProductDefaultsKey {
+    static let completedWelcome = "com.slmcamp.CoolCumber.welcome.v1.completed"
+}
+
 @main
 struct CoolCumberApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -20,15 +24,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
+        let arguments = ProcessInfo.processInfo.arguments
 
-        // The menu bar shell is intentionally the only automatic startup work.
-        // Sensor polling starts after a user opens the popover or main window,
-        // and privileged helper setup always requires an explicit action.
+        #if DEBUG
+        if arguments.contains("--ui-language-en") {
+            LanguageManager.shared.setLanguage("en")
+        } else if arguments.contains("--ui-language-zh") {
+            LanguageManager.shared.setLanguage("zh")
+        }
+        if arguments.contains("--ui-appearance-dark") {
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        } else if arguments.contains("--ui-appearance-light") {
+            NSApp.appearance = NSAppearance(named: .aqua)
+        }
+        #endif
+
+        // Monitoring starts with the menu-bar app so history and opt-in alerts
+        // remain truthful even when no window has been opened. The collector is
+        // read-only; privileged helper setup still requires an explicit action.
+        DaemonManager.shared.retireLegacyHelperIfNeeded()
         MenuBarManager.shared.setup()
+        ProductUIModel.shared.startReadOnlyMonitoring()
+        Task { @MainActor in
+            ProductDataCoordinator.shared.start()
+        }
 
         let smartBarEnabled = UserDefaults.standard.bool(forKey: "smartBarEnabled")
         if smartBarEnabled && ProductUIModel.shared.hasNotchedScreen {
             SmartBarManager.shared.setup()
+        }
+
+        let shouldShowWelcome = arguments.contains("--show-welcome")
+            || (!UserDefaults.standard.bool(
+                forKey: ProductDefaultsKey.completedWelcome
+            ) && !arguments.contains("--skip-welcome"))
+        let requestedWindow = [
+            "--open-main-window",
+            "--open-history",
+            "--open-settings",
+            "--open-pro",
+            "--show-welcome"
+        ].contains(where: arguments.contains)
+        if shouldShowWelcome || requestedWindow {
+            DispatchQueue.main.async { [weak self] in
+                if arguments.contains("--open-history") {
+                    ProductUIModel.shared.selectedSection = .history
+                } else if arguments.contains("--open-settings") {
+                    ProductUIModel.shared.selectedSection = .settings
+                }
+                self?.showDashboard()
+            }
         }
     }
 
@@ -58,6 +103,7 @@ enum ProductSection: String, CaseIterable, Identifiable, Hashable {
     case overview
     case cooling
     case activity
+    case history
     case battery
     case maintenance
     case settings
@@ -69,6 +115,7 @@ enum ProductSection: String, CaseIterable, Identifiable, Hashable {
         case .overview: return "gauge.with.dots.needle.67percent"
         case .cooling: return "fanblades"
         case .activity: return "waveform.path.ecg"
+        case .history: return "chart.xyaxis.line"
         case .battery: return "battery.75percent"
         case .maintenance: return "wrench.and.screwdriver"
         case .settings: return "gearshape"
@@ -80,6 +127,7 @@ enum ProductSection: String, CaseIterable, Identifiable, Hashable {
         case .overview: return isChinese ? "概览" : "Overview"
         case .cooling: return isChinese ? "散热" : "Cooling"
         case .activity: return isChinese ? "活动" : "Activity"
+        case .history: return isChinese ? "历史" : "History"
         case .battery: return isChinese ? "电池" : "Battery"
         case .maintenance: return isChinese ? "维护" : "Maintenance"
         case .settings: return isChinese ? "设置" : "Settings"
@@ -87,18 +135,28 @@ enum ProductSection: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-private enum ProductLegacyPage: String, Identifiable {
-    case cooling
-    case optimizer
-    case settings
-
-    var id: String { rawValue }
-}
-
 struct ProductRootView: View {
     @ObservedObject var model: ProductUIModel
     @ObservedObject private var language = LanguageManager.shared
-    @State private var legacyPage: ProductLegacyPage?
+    @ObservedObject private var commerce = PurchaseController.shared
+    @State private var showsPaywall: Bool
+    @State private var showsWelcome: Bool
+
+    init(model: ProductUIModel) {
+        self.model = model
+        let arguments = ProcessInfo.processInfo.arguments
+        _showsPaywall = State(
+            initialValue: arguments.contains("--open-pro")
+        )
+        _showsWelcome = State(
+            initialValue: arguments.contains("--show-welcome")
+                || (!UserDefaults.standard.bool(
+                    forKey: ProductDefaultsKey.completedWelcome
+                )
+                    && !arguments.contains("--skip-welcome")
+                    && !arguments.contains("--open-pro"))
+        )
+    }
 
     private var isChinese: Bool { language.currentLanguage == "zh" }
 
@@ -140,6 +198,18 @@ struct ProductRootView: View {
                         ProductFreshnessLabel(date: model.freshestSampleDate, isChinese: isChinese)
 
                         Button {
+                            showsPaywall = true
+                        } label: {
+                            Label(
+                                commerce.isProUnlocked
+                                    ? (isChinese ? "Pro 已启用" : "Pro active")
+                                    : (isChinese ? "了解 Pro" : "View Pro"),
+                                systemImage: commerce.isProUnlocked ? "checkmark.seal.fill" : "sparkles"
+                            )
+                        }
+                        .help(isChinese ? "查看版本与购买状态" : "View edition and purchase status")
+
+                        Button {
                             model.refresh()
                         } label: {
                             Label(isChinese ? "刷新读数" : "Refresh readings", systemImage: "arrow.clockwise")
@@ -155,8 +225,17 @@ struct ProductRootView: View {
         .onAppear {
             model.startReadOnlyMonitoring()
         }
-        .sheet(item: $legacyPage) { page in
-            ProductLegacySheet(page: page)
+        .sheet(isPresented: $showsPaywall) {
+            PaywallView()
+        }
+        .sheet(isPresented: $showsWelcome) {
+            ProductWelcomeView(model: model) {
+                UserDefaults.standard.set(
+                    true,
+                    forKey: ProductDefaultsKey.completedWelcome
+                )
+                showsWelcome = false
+            }
         }
     }
 
@@ -166,27 +245,112 @@ struct ProductRootView: View {
         case .overview:
             ProductOverviewPage(model: model, isChinese: isChinese)
         case .cooling:
-            ProductCoolingPage(model: model, isChinese: isChinese) {
-                legacyPage = .cooling
-            }
+            ProductCoolingPage(model: model, isChinese: isChinese)
         case .activity:
-            ProductActivityPage(model: model, isChinese: isChinese) {
-                legacyPage = .optimizer
-            }
+            ProductActivityPage(model: model, isChinese: isChinese)
+        case .history:
+            ProductHistoryPage(
+                isChinese: isChinese,
+                showPro: { showsPaywall = true }
+            )
         case .battery:
-            ProductBatteryPage(model: model, isChinese: isChinese) {
-                legacyPage = .cooling
-            }
+            ProductBatteryPage(model: model, isChinese: isChinese)
         case .maintenance:
-            ProductMaintenancePage(model: model, isChinese: isChinese) {
-                legacyPage = .optimizer
-            }
+            ProductMaintenancePage(model: model, isChinese: isChinese)
         case .settings:
             ScrollView {
                 ProductSettingsPane(model: model)
                     .padding(24)
             }
         }
+    }
+}
+
+private struct ProductWelcomeView: View {
+    @ObservedObject var model: ProductUIModel
+    @ObservedObject private var language = LanguageManager.shared
+    let complete: () -> Void
+
+    private var isChinese: Bool { language.currentLanguage == "zh" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            HStack(spacing: 14) {
+                Image(systemName: "leaf.circle.fill")
+                    .font(.system(size: 38, weight: .semibold))
+                    .foregroundStyle(.green)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(isChinese ? "欢迎使用 CoolCumber" : "Welcome to CoolCumber")
+                        .font(.title2.weight(.semibold))
+                    Text(isChinese ? "安静、可信的 Mac 健康监测" : "Quiet, trustworthy Mac health monitoring")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 16) {
+                welcomeRow(
+                    icon: "checkmark.shield",
+                    title: isChinese ? "只展示可信数据" : "Only trustworthy data",
+                    detail: isChinese
+                        ? "缺失、过期或不支持的指标会明确标记，绝不补入模拟数值。"
+                        : "Missing, stale, and unsupported metrics are labeled explicitly—never replaced with simulated values."
+                )
+                welcomeRow(
+                    icon: "menubar.rectangle",
+                    title: isChinese ? "菜单栏是主入口" : "Built for the menu bar",
+                    detail: isChinese
+                        ? "关闭窗口后仍会进行轻量只读采样，以维护本地历史和你主动开启的提醒。"
+                        : "Lightweight read-only sampling continues with windows closed to maintain local history and alerts you enable."
+                )
+                welcomeRow(
+                    icon: model.isAppStoreEdition ? "shippingbox" : "lock.shield",
+                    title: model.isAppStoreEdition
+                        ? (isChinese ? "严格沙盒运行" : "Strictly sandboxed")
+                        : (isChinese ? "硬件组件始终可选" : "Hardware helper stays optional"),
+                    detail: model.isAppStoreEdition
+                        ? (isChinese
+                            ? "App Store 版不会安装特权组件；底层温度和风扇数据可能显示为不支持。"
+                            : "The App Store edition never installs a privileged helper; low-level temperature and fan readings may be unsupported.")
+                        : (isChinese
+                            ? "只有在你查看说明并明确确认后，才会注册有界只读的硬件监测组件。"
+                            : "The bounded, read-only hardware helper is registered only after you review the explanation and explicitly confirm.")
+                )
+            }
+
+            Button(isChinese ? "进入 CoolCumber" : "Continue to CoolCumber") {
+                complete()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(28)
+        .frame(width: 600)
+    }
+
+    private func welcomeRow(
+        icon: String,
+        title: String,
+        detail: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(.green)
+                .frame(width: 28)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -302,7 +466,6 @@ private struct ProductHealthSummary: View {
 private struct ProductCoolingPage: View {
     @ObservedObject var model: ProductUIModel
     let isChinese: Bool
-    let openLegacy: () -> Void
 
     var body: some View {
         ProductPageContainer {
@@ -310,8 +473,8 @@ private struct ProductCoolingPage: View {
                 icon: "fanblades",
                 title: isChinese ? "散热" : "Cooling",
                 subtitle: isChinese
-                    ? "先展示系统真实状态，再逐步开放经过安全验证的控制能力。"
-                    : "See real system state first; controls appear only after they pass safety validation."
+                    ? "基于可验证读数展示散热状态；不支持的控制能力始终保持不可用。"
+                    : "Cooling status is based on verified readings; unsupported controls remain unavailable."
             )
 
             HStack(alignment: .top, spacing: 16) {
@@ -346,12 +509,15 @@ private struct ProductCoolingPage: View {
                 )
             } else {
                 ProductHelperSetupCard(model: model, isChinese: isChinese)
-                ProductLegacyButton(
-                    title: isChinese ? "打开现有散热详细视图" : "Open existing cooling details",
+                ProductNoticeCard(
+                    icon: "lock.shield",
+                    title: productIsBetaBuild
+                        ? (isChinese ? "Beta 暂不开放散热控制" : "Cooling controls are unavailable in Beta")
+                        : (isChinese ? "手动散热控制未提供" : "Manual cooling controls are not offered"),
                     message: isChinese
-                        ? "现有页面保留为二级工具；需要明确操作后才会打开。"
-                        : "The existing page remains available as a secondary tool and opens only on request.",
-                    action: openLegacy
+                        ? "此版本只读取可信的 SystemSnapshot。它不会自动写入 SMC，也不会把不可用的硬件控制作为 Pro 功能销售。"
+                        : "This release reads trusted SystemSnapshot data only. It never writes SMC automatically or sells unavailable hardware controls as Pro features.",
+                    tone: .neutral
                 )
             }
         }
@@ -361,7 +527,6 @@ private struct ProductCoolingPage: View {
 private struct ProductActivityPage: View {
     @ObservedObject var model: ProductUIModel
     let isChinese: Bool
-    let openLegacy: () -> Void
 
     var body: some View {
         ProductPageContainer {
@@ -392,18 +557,11 @@ private struct ProductActivityPage: View {
                 icon: "person.crop.circle.badge.checkmark",
                 title: isChinese ? "操作需要确认" : "Actions require confirmation",
                 message: isChinese
-                    ? "可信进程采样和可恢复操作将在下一阶段接入；当前骨架不会自动终止、冻结或降频任何进程。"
-                    : "Trusted process sampling and recoverable actions arrive in the next phase. This shell never terminates, freezes, or throttles a process automatically.",
+                    ? "CoolCumber 只呈现可信的系统负载，不会自动终止、冻结或降频任何进程。"
+                    : "CoolCumber presents trusted system load and never terminates, freezes, or throttles a process automatically.",
                 tone: .neutral
             )
 
-            #if !APPSTORE
-            ProductLegacyButton(
-                title: isChinese ? "打开现有活动详细视图" : "Open existing activity details",
-                message: isChinese ? "仅在主动打开后加载现有工具。" : "Existing tools load only after you open them.",
-                action: openLegacy
-            )
-            #endif
         }
     }
 }
@@ -411,7 +569,6 @@ private struct ProductActivityPage: View {
 private struct ProductBatteryPage: View {
     @ObservedObject var model: ProductUIModel
     let isChinese: Bool
-    let openLegacy: () -> Void
 
     var body: some View {
         ProductPageContainer {
@@ -423,25 +580,35 @@ private struct ProductBatteryPage: View {
                     : "Only battery information verified by macOS or a trusted component is shown."
             )
 
-            ProductUnavailablePanel(
-                icon: "battery.0percent",
-                title: isChinese ? "电池可信数据层尚未接入" : "Trusted battery data is not connected yet",
-                message: model.isAppStoreEdition
-                    ? (isChinese
-                        ? "当前 App Store 版本不会模拟健康度、循环次数或充电限制。"
-                        : "This App Store build does not simulate health, cycle count, or charge limits.")
-                    : (isChinese
-                        ? "完成辅助组件验证后，这里才会显示真实健康度、循环次数与可用控制。"
-                        : "Real health, cycle count, and supported controls appear only after helper validation is complete.")
-            )
+            HStack(alignment: .top, spacing: 16) {
+                ProductMetricCard(
+                    title: isChinese ? "最大容量" : "Maximum capacity",
+                    icon: "battery.75percent",
+                    state: model.batteryCapacity,
+                    unit: "%"
+                )
+                ProductMetricCard(
+                    title: isChinese ? "循环次数" : "Cycle count",
+                    icon: "arrow.triangle.2.circlepath",
+                    state: model.batteryCycles,
+                    unit: ""
+                )
+                ProductMetricCard(
+                    title: isChinese ? "电池状况" : "Battery condition",
+                    icon: "heart.text.square",
+                    state: model.batteryCondition,
+                    unit: ""
+                )
+            }
 
-            #if !APPSTORE
-            ProductLegacyButton(
-                title: isChinese ? "打开现有电池详细视图" : "Open existing battery details",
-                message: isChinese ? "现有页面保留为二级工具。" : "The existing page remains a secondary tool.",
-                action: openLegacy
+            ProductNoticeCard(
+                icon: "eye",
+                title: isChinese ? "当前为可信只读模式" : "Trusted read-only mode",
+                message: isChinese
+                    ? "所有值直接来自 SystemSnapshot；不可用与过期状态会如实显示。本产品不承诺或销售电池充电限制。"
+                    : "Every value comes directly from SystemSnapshot, including unavailable and stale states. This product does not promise or sell battery charge limits.",
+                tone: .neutral
             )
-            #endif
         }
     }
 }
@@ -449,7 +616,6 @@ private struct ProductBatteryPage: View {
 private struct ProductMaintenancePage: View {
     @ObservedObject var model: ProductUIModel
     let isChinese: Bool
-    let openLegacy: () -> Void
 
     var body: some View {
         ProductPageContainer {
@@ -465,26 +631,19 @@ private struct ProductMaintenancePage: View {
                 icon: "hand.raised.fill",
                 title: isChinese ? "自动维护已关闭" : "Automatic maintenance is off",
                 message: isChinese
-                    ? "此阶段不会自动清理文件、释放内存、重建索引或修改后台服务。安全操作模型完成后再逐项开放。"
-                    : "This phase never cleans files, purges memory, rebuilds indexes, or changes services automatically. Capabilities return individually after the safety model is complete.",
+                    ? "CoolCumber 不会自动清理文件、制造内存压力、重建索引或修改后台服务。"
+                    : "CoolCumber never cleans files automatically, creates memory pressure, rebuilds indexes, or changes background services.",
                 tone: .warning
             )
 
             ProductUnavailablePanel(
                 icon: "clock.arrow.circlepath",
-                title: isChinese ? "操作历史将在下一阶段提供" : "Operation history arrives next",
+                title: isChinese ? "没有隐式系统操作" : "No hidden system actions",
                 message: isChinese
-                    ? "每次操作都将记录目标、预估影响、结果和恢复方式。"
-                    : "Each action will record its target, expected impact, result, and recovery path."
+                    ? "维护页是清晰的产品边界说明；监测、历史和提醒不会修改你的文件或系统设置。"
+                    : "This page documents the product boundary: monitoring, history, and alerts do not modify your files or system settings."
             )
 
-            #if !APPSTORE
-            ProductLegacyButton(
-                title: isChinese ? "打开现有维护详细视图" : "Open existing maintenance details",
-                message: isChinese ? "仅在主动打开后加载现有工具。" : "Existing tools load only after you open them.",
-                action: openLegacy
-            )
-            #endif
         }
     }
 }
@@ -495,6 +654,8 @@ struct ProductSettingsPane: View {
     @ObservedObject var model: ProductUIModel
     @ObservedObject private var language = LanguageManager.shared
     @AppStorage("smartBarEnabled") private var smartBarEnabled = false
+    @ObservedObject private var commerce = PurchaseController.shared
+    @State private var showsPaywall = false
 
     private var isChinese: Bool { language.currentLanguage == "zh" }
 
@@ -557,6 +718,22 @@ struct ProductSettingsPane: View {
                 } else {
                     ProductHelperSetupCard(model: model, isChinese: isChinese)
                 }
+
+                LabeledContent(isChinese ? "Pro 权益" : "Pro access") {
+                    Text(commerce.entitlement.statusTitle(isChinese: isChinese))
+                        .foregroundColor(commerce.isProUnlocked ? .green : .secondary)
+                }
+
+                Button {
+                    showsPaywall = true
+                } label: {
+                    Label(
+                        commerce.isProUnlocked
+                            ? (isChinese ? "管理 Pro" : "Manage Pro")
+                            : (isChinese ? "查看终身 Pro" : "View lifetime Pro"),
+                        systemImage: commerce.isProUnlocked ? "checkmark.seal" : "sparkles"
+                    )
+                }
             }
 
             Section(isChinese ? "数据诚信" : "Data Integrity") {
@@ -571,8 +748,42 @@ struct ProductSettingsPane: View {
                 )
                 .font(.system(size: 13))
             }
+
+            Section(isChinese ? "隐私与支持" : "Privacy & Support") {
+                Link(
+                    destination: URL(
+                        string: "https://github.com/lastkimi/CoolCumber/blob/master/PRIVACY.md"
+                    )!
+                ) {
+                    Label(isChinese ? "隐私政策" : "Privacy Policy", systemImage: "hand.raised")
+                }
+                Link(
+                    destination: URL(
+                        string: "https://github.com/lastkimi/CoolCumber/issues"
+                    )!
+                ) {
+                    Label(isChinese ? "支持与问题反馈" : "Support and Feedback", systemImage: "questionmark.circle")
+                }
+                LabeledContent(isChinese ? "应用版本" : "App version") {
+                    Text(appVersionText)
+                        .foregroundColor(.secondary)
+                }
+            }
         }
         .formStyle(.grouped)
+        .sheet(isPresented: $showsPaywall) {
+            PaywallView()
+        }
+    }
+
+    private var appVersionText: String {
+        let version = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "—"
+        let build = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleVersion"
+        ) as? String ?? "—"
+        return "\(version) (\(build))"
     }
 }
 
@@ -581,9 +792,8 @@ private struct ProductHelperSetupCard: View {
     let isChinese: Bool
     @State private var showsConfirmation = false
 
-    private var helperAppearsEnabled: Bool {
-        let status = model.helperStatus.lowercased()
-        return status.contains("enabled") || status.contains("registered")
+    private var requiresManualRemoval: Bool {
+        model.helperRuntimeStatus.contains("Manual Removal Required")
     }
 
     var body: some View {
@@ -591,11 +801,11 @@ private struct ProductHelperSetupCard: View {
             HStack {
                 Label(
                     isChinese ? "硬件监测辅助组件" : "Hardware monitoring helper",
-                    systemImage: helperAppearsEnabled ? "checkmark.shield.fill" : "lock.shield"
+                    systemImage: model.hardwareMonitoringReady ? "checkmark.shield.fill" : "lock.shield"
                 )
                 .font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Text(model.helperStatus)
+                Text(model.hardwareMonitoringStatus(isChinese: isChinese))
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
@@ -606,11 +816,24 @@ private struct ProductHelperSetupCard: View {
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
 
-            if !helperAppearsEnabled {
-                Button(isChinese ? "设置硬件监测…" : "Set Up Hardware Monitoring…") {
-                    showsConfirmation = true
+            if !model.hardwareMonitoringReady {
+                if requiresManualRemoval {
+                    Link(
+                        isChinese ? "查看安全移除指南" : "Open the safe removal guide",
+                        destination: URL(
+                            string: "https://github.com/lastkimi/CoolCumber/blob/master/SECURITY.md#removing-a-pre-v2-helper"
+                        )!
+                    )
+                } else {
+                    Button(
+                        model.helperSetupRequested
+                            ? (isChinese ? "重新检查或重试…" : "Check Again or Retry…")
+                            : (isChinese ? "设置硬件监测…" : "Set Up Hardware Monitoring…")
+                    ) {
+                        showsConfirmation = true
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
             }
         }
         .padding(16)
@@ -621,7 +844,9 @@ private struct ProductHelperSetupCard: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .alert(
-            isChinese ? "设置辅助组件？" : "Set up the helper?",
+            model.helperRuntimeStatus.contains("Legacy Helper")
+                ? (isChinese ? "安全迁移旧版组件？" : "Migrate the legacy helper securely?")
+                : (isChinese ? "设置辅助组件？" : "Set up the helper?"),
             isPresented: $showsConfirmation
         ) {
             Button(isChinese ? "取消" : "Cancel", role: .cancel) {}
@@ -629,9 +854,15 @@ private struct ProductHelperSetupCard: View {
                 model.requestHelperSetup()
             }
         } message: {
-            Text(isChinese
-                 ? "macOS 可能要求你在系统设置中批准后台项目。CoolCumber 不会在未经确认时安装它。"
-                 : "macOS may ask you to approve a background item in System Settings. CoolCumber never installs it without confirmation.")
+            Text(
+                model.helperRuntimeStatus.contains("Legacy Helper")
+                    ? (isChinese
+                        ? "CoolCumber 将停用旧版辅助组件，再注册只提供两项有界只读 SMC 读取的新版本；macOS 可能要求你批准后台项目。"
+                        : "CoolCumber will retire the legacy helper, then register a new helper limited to two bounded, read-only SMC calls. macOS may ask you to approve the background item.")
+                    : (isChinese
+                        ? "macOS 可能要求你在系统设置中批准后台项目。CoolCumber 不会在未经确认时安装它。"
+                        : "macOS may ask you to approve a background item in System Settings. CoolCumber never installs it without confirmation.")
+            )
         }
     }
 }
@@ -830,30 +1061,6 @@ private struct ProductUnavailablePanel: View {
     }
 }
 
-private struct ProductLegacyButton: View {
-    let title: String
-    let message: String
-    let action: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                Text(message)
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-            }
-            Spacer()
-            Button(productLocalized("Open", "打开"), action: action)
-                .buttonStyle(.bordered)
-        }
-        .padding(16)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-}
-
 private struct ProductFreshnessLabel: View {
     let date: Date?
     let isChinese: Bool
@@ -888,24 +1095,5 @@ private enum ProductTimestamp {
 
     static func text(for date: Date) -> String {
         formatter.string(from: date)
-    }
-}
-
-private struct ProductLegacySheet: View {
-    let page: ProductLegacyPage
-
-    @ViewBuilder
-    var body: some View {
-        switch page {
-        case .cooling:
-            ThermalPowerView()
-                .frame(minWidth: 900, minHeight: 620)
-        case .optimizer:
-            SystemOptimizerView()
-                .frame(minWidth: 900, minHeight: 620)
-        case .settings:
-            SettingsView()
-                .frame(minWidth: 760, minHeight: 560)
-        }
     }
 }

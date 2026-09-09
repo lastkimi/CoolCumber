@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	This is an inert migration descriptor, not a runnable v1 service. Keeping
+	the old Label lets SMAppService identify and unregister the pre-v2 job. It
+	intentionally declares no MachServices entry, and application code never
+	registers this descriptor.
+	-->
+	<key>Label</key>
+	<string>com.coolcumber.helper</string>
+	<key>BundleProgram</key>
+	<string>Contents/Library/LaunchServices/com.slmcamp.CoolCumber.helper.v2</string>
+</dict>
+</plist>

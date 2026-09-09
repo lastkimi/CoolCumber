@@ -2,7 +2,13 @@
 
 set -euo pipefail
 
+DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+export DEVELOPER_DIR
+
 invocation_directory="$(pwd -P)"
+script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=Scripts/release-config.sh
+source "$script_directory/release-config.sh"
 
 usage() {
     cat <<'USAGE'
@@ -14,14 +20,15 @@ Usage:
     --notarization-input PATH.zip \
     --version VERSION \
     --build BUILD \
+    --configuration Release|Beta \
     --team-id TEAM_ID \
+    --source-commit FULL_40_CHARACTER_HEAD \
     [--notary-profile KEYCHAIN_PROFILE]
 
 Notary credentials are read from the environment, never from command-line flags.
 Use one of these credential sets:
   NOTARY_KEYCHAIN_PROFILE (or --notary-profile)
   NOTARY_KEY_PATH + NOTARY_KEY_ID + NOTARY_ISSUER_ID
-  APPLE_ID + APP_SPECIFIC_PASSWORD (TEAM_ID comes from --team-id or TEAM_ID)
 USAGE
 }
 
@@ -31,7 +38,9 @@ mas_installer=""
 notarization_input=""
 expected_version="${RELEASE_VERSION:-}"
 expected_build="${RELEASE_BUILD:-}"
+configuration=""
 team_id="${TEAM_ID:-}"
+source_commit=""
 notary_profile="${NOTARY_KEYCHAIN_PROFILE:-}"
 
 while [ "$#" -gt 0 ]; do
@@ -60,8 +69,16 @@ while [ "$#" -gt 0 ]; do
             expected_build="${2:-}"
             shift 2
             ;;
+        --configuration)
+            configuration="${2:-}"
+            shift 2
+            ;;
         --team-id)
             team_id="${2:-}"
+            shift 2
+            ;;
+        --source-commit)
+            source_commit="${2:-}"
             shift 2
             ;;
         --notary-profile)
@@ -95,7 +112,9 @@ require_value '--mas-installer' "$mas_installer"
 require_value '--notarization-input' "$notarization_input"
 require_value '--version' "$expected_version"
 require_value '--build' "$expected_build"
+require_value '--configuration' "$configuration"
 require_value '--team-id' "$team_id"
+require_value '--source-commit' "$source_commit"
 
 if ! [[ "$expected_version" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
     printf '%s\n' 'Release version must contain two or three numeric components.' >&2
@@ -105,8 +124,17 @@ if ! [[ "$expected_build" =~ ^[1-9][0-9]*$ ]]; then
     printf '%s\n' 'Release build number must be a positive integer.' >&2
     exit 64
 fi
+case "$configuration" in Release|Beta) ;; *)
+    printf '%s\n' '--configuration must be exactly Release or Beta.' >&2
+    exit 64
+esac
 if ! [[ "$team_id" =~ ^[A-Z0-9]{10}$ ]]; then
     printf '%s\n' 'Team ID must contain exactly 10 uppercase letters or digits.' >&2
+    exit 64
+fi
+
+if [ -n "${APPLE_ID:-}" ] || [ -n "${APP_SPECIFIC_PASSWORD:-}" ]; then
+    printf '%s\n' 'Legacy Apple-ID password credentials are not accepted; use an API key or keychain profile.' >&2
     exit 64
 fi
 
@@ -124,19 +152,27 @@ absolute_from_invocation() {
 
 direct_app="$(absolute_from_invocation "$direct_app")"
 mas_app="$(absolute_from_invocation "$mas_app")"
-mas_installer="$(absolute_from_invocation "$mas_installer")"
+if [ -n "$mas_installer" ]; then
+    mas_installer="$(absolute_from_invocation "$mas_installer")"
+fi
 notarization_input="$(absolute_from_invocation "$notarization_input")"
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
+release_require_explicit_source_commit "$source_commit"
 
-required_tools=(codesign ditto git pkgutil plutil ruby stat strings xcrun)
+required_tools=(codesign ditto find git grep lipo pkgutil plutil ruby security stat strings xcrun)
 for required_tool in "${required_tools[@]}"; do
     if ! command -v "$required_tool" > /dev/null 2>&1; then
         printf 'Required release tool is unavailable: %s\n' "$required_tool" >&2
         exit 1
     fi
 done
+
+if [ ! -d "$DEVELOPER_DIR" ] || [ ! -x "$DEVELOPER_DIR/usr/bin/xcodebuild" ]; then
+    printf 'DEVELOPER_DIR does not contain a usable Xcode installation: %s\n' "$DEVELOPER_DIR" >&2
+    exit 1
+fi
 
 if [ ! -d "$direct_app" ]; then
     printf 'Direct app bundle does not exist: %s\n' "$direct_app" >&2
@@ -146,7 +182,7 @@ if [ ! -d "$mas_app" ]; then
     printf 'Mac App Store app bundle does not exist: %s\n' "$mas_app" >&2
     exit 1
 fi
-if [ ! -s "$mas_installer" ]; then
+if [ -n "$mas_installer" ] && [ ! -s "$mas_installer" ]; then
     printf 'Mac App Store installer does not exist or is empty: %s\n' "$mas_installer" >&2
     exit 1
 fi
@@ -155,15 +191,17 @@ if [ ! -s "$notarization_input" ]; then
     exit 1
 fi
 
-installer_extension="$(printf '%s' "$mas_installer" | tr '[:upper:]' '[:lower:]')"
-case "$installer_extension" in
-    *.pkg)
-        ;;
-    *)
-        printf '%s\n' 'Mac App Store installer must be a .pkg file.' >&2
-        exit 1
-        ;;
-esac
+if [ -n "$mas_installer" ]; then
+    installer_extension="$(printf '%s' "$mas_installer" | tr '[:upper:]' '[:lower:]')"
+    case "$installer_extension" in
+        *.pkg)
+            ;;
+        *)
+            printf '%s\n' 'Mac App Store installer must be a .pkg file.' >&2
+            exit 1
+            ;;
+    esac
+fi
 
 notary_extension="$(printf '%s' "$notarization_input" | tr '[:upper:]' '[:lower:]')"
 case "$notary_extension" in
@@ -211,6 +249,19 @@ assert_bundle_version() {
     fi
 }
 
+assert_export_compliance() {
+    local bundle="$1"
+    local label="$2"
+    local actual
+
+    actual="$(plist_value "$bundle/Contents/Info.plist" ITSAppUsesNonExemptEncryption 2> /dev/null || true)"
+    if [ "$actual" != 'false' ]; then
+        printf '%s must declare ITSAppUsesNonExemptEncryption=false; got %s\n' \
+            "$label" "${actual:-missing}" >&2
+        exit 1
+    fi
+}
+
 assert_source_version() {
     local plist="$1"
     local key="$2"
@@ -238,8 +289,115 @@ collect_extensions() {
     fi
 }
 
+assert_no_storekit_test_configuration() {
+    local app_bundle="$1"
+    local label="$2"
+    if [ -n "$(find "$app_bundle" -type f -name '*.storekit' -print -quit)" ]; then
+        printf '%s must not contain a StoreKit test configuration.\n' "$label" >&2
+        exit 1
+    fi
+}
+
+assert_bundle_identifier() {
+    local bundle="$1"
+    local expected_identifier="$2"
+    local label="$3"
+    local actual_identifier
+
+    actual_identifier="$(plist_value "$bundle/Contents/Info.plist" CFBundleIdentifier)"
+    if [ "$actual_identifier" != "$expected_identifier" ]; then
+        printf '%s bundle identifier mismatch: expected %s, got %s\n' \
+            "$label" "$expected_identifier" "$actual_identifier" >&2
+        exit 1
+    fi
+}
+
+assert_privacy_reason() {
+    local manifest="$1"
+    local category="$2"
+    local reason="$3"
+    local index=0
+    local actual_category
+    local reasons
+
+    while [ "$index" -lt 64 ]; do
+        if ! actual_category="$(plist_value "$manifest" "NSPrivacyAccessedAPITypes:$index:NSPrivacyAccessedAPIType" 2> /dev/null)"; then
+            break
+        fi
+        if [ "$actual_category" = "$category" ]; then
+            reasons="$(plist_value "$manifest" "NSPrivacyAccessedAPITypes:$index:NSPrivacyAccessedAPITypeReasons")"
+            if grep -F -q "$reason" <<< "$reasons"; then
+                return
+            fi
+        fi
+        index=$((index + 1))
+    done
+    printf 'Privacy manifest is missing reason %s for %s: %s\n' "$reason" "$category" "$manifest" >&2
+    exit 1
+}
+
+assert_bundle_privacy() {
+    local app_bundle="$1"
+    local label="$2"
+    local manifest="$app_bundle/Contents/Resources/PrivacyInfo.xcprivacy"
+
+    if [ ! -s "$manifest" ] || ! plutil -lint "$manifest" > /dev/null; then
+        printf '%s is missing a valid PrivacyInfo.xcprivacy.\n' "$label" >&2
+        exit 1
+    fi
+    assert_privacy_reason "$manifest" NSPrivacyAccessedAPICategoryUserDefaults CA92.1
+    assert_privacy_reason "$manifest" NSPrivacyAccessedAPICategoryDiskSpace 85F4.1
+    assert_privacy_reason "$manifest" NSPrivacyAccessedAPICategoryFileTimestamp C617.1
+}
+
+assert_widget_privacy() {
+    local widget_bundle="$1"
+    local label="$2"
+    local manifest="$widget_bundle/Contents/Resources/PrivacyInfo.xcprivacy"
+    if [ ! -s "$manifest" ] || ! plutil -lint "$manifest" > /dev/null; then
+        printf '%s is missing a valid PrivacyInfo.xcprivacy.\n' "$label" >&2
+        exit 1
+    fi
+}
+
+assert_provisioning_application_identifier() {
+    local bundle="$1"
+    local expected_identifier="$2"
+    local label="$3"
+    local stem="$4"
+    local profile="$bundle/Contents/embedded.provisionprofile"
+    local decoded="$work_dir/$stem-profile.plist"
+    local actual_identifier
+    local profile_team
+
+    if [ ! -s "$profile" ]; then
+        printf '%s is missing embedded.provisionprofile.\n' "$label" >&2
+        exit 1
+    fi
+    if ! security cms -D -i "$profile" > "$decoded"; then
+        printf '%s provisioning profile cannot be decoded.\n' "$label" >&2
+        exit 1
+    fi
+    plutil -lint "$decoded" > /dev/null
+    profile_team="$(plist_value "$decoded" TeamIdentifier:0)"
+    actual_identifier="$(plist_value "$decoded" Entitlements:application-identifier)"
+    if [ "$profile_team" != "$team_id" ] || [ "$actual_identifier" != "$team_id.$expected_identifier" ]; then
+        printf '%s provisioning identity mismatch: expected %s.%s.\n' \
+            "$label" "$team_id" "$expected_identifier" >&2
+        exit 1
+    fi
+}
+
 assert_bundle_version "$direct_app" 'Direct app'
 assert_bundle_version "$mas_app" 'Mac App Store app'
+assert_export_compliance "$direct_app" 'Direct app'
+assert_export_compliance "$mas_app" 'Mac App Store app'
+assert_bundle_identifier "$direct_app" "$RELEASE_APP_BUNDLE_ID" 'Direct app'
+assert_bundle_identifier "$mas_app" "$RELEASE_APP_BUNDLE_ID" 'Mac App Store app'
+assert_bundle_privacy "$direct_app" 'Direct app'
+assert_bundle_privacy "$mas_app" 'Mac App Store app'
+assert_no_storekit_test_configuration "$direct_app" 'Direct app'
+assert_no_storekit_test_configuration "$mas_app" 'Mac App Store app'
 assert_source_version "$repo_root/ThermFlowApp/Info.plist" CFBundleShortVersionString "$expected_version" MARKETING_VERSION
 assert_source_version "$repo_root/ThermFlowApp/Info.plist" CFBundleVersion "$expected_build" CURRENT_PROJECT_VERSION
 assert_source_version "$repo_root/ThermFlowWidget/Info.plist" CFBundleShortVersionString "$expected_version" MARKETING_VERSION
@@ -252,13 +410,17 @@ collect_extensions "$mas_app" "$mas_extensions"
 
 while IFS= read -r extension; do
     assert_bundle_version "$extension" 'Direct embedded extension'
+    assert_bundle_identifier "$extension" "$RELEASE_WIDGET_BUNDLE_ID" 'Direct embedded extension'
+    assert_widget_privacy "$extension" 'Direct embedded extension'
 done < "$direct_extensions"
 while IFS= read -r extension; do
     assert_bundle_version "$extension" 'Mac App Store embedded extension'
+    assert_bundle_identifier "$extension" "$RELEASE_WIDGET_BUNDLE_ID" 'Mac App Store embedded extension'
+    assert_widget_privacy "$extension" 'Mac App Store embedded extension'
 done < "$mas_extensions"
 
 "$repo_root/Scripts/check-project-boundaries.rb" "$repo_root/project.yml" "$expected_version" "$expected_build"
-"$repo_root/Scripts/check-channel-boundaries.sh" "$direct_app" "$mas_app"
+"$repo_root/Scripts/check-channel-boundaries.sh" "$direct_app" "$mas_app" "$configuration"
 
 signature_details=""
 load_signature_details() {
@@ -316,16 +478,33 @@ assert_mas_signature() {
     exit 1
 }
 
-direct_helper="$direct_app/Contents/Library/LaunchServices/com.coolcumber.helper"
+assert_signature_identifier() {
+    local signed_path="$1"
+    local expected_identifier="$2"
+    local label="$3"
+    load_signature_details "$signed_path"
+    if ! grep -F -q "Identifier=$expected_identifier" <<< "$signature_details"; then
+        printf '%s code-signing identifier must be %s: %s\n' \
+            "$label" "$expected_identifier" "$signed_path" >&2
+        exit 1
+    fi
+}
+
+direct_helper="$direct_app/Contents/Library/LaunchServices/$RELEASE_HELPER_EXECUTABLE_NAME"
 assert_direct_signature "$direct_app" 'Direct app'
 assert_direct_signature "$direct_helper" 'Direct privileged helper'
+assert_signature_identifier "$direct_app" "$RELEASE_APP_BUNDLE_ID" 'Direct app'
+assert_signature_identifier "$direct_helper" "$RELEASE_HELPER_SERVICE_ID" 'Direct privileged helper'
 while IFS= read -r extension; do
     assert_direct_signature "$extension" 'Direct embedded extension'
+    assert_signature_identifier "$extension" "$RELEASE_WIDGET_BUNDLE_ID" 'Direct embedded extension'
 done < "$direct_extensions"
 
 assert_mas_signature "$mas_app" 'Mac App Store app'
+assert_signature_identifier "$mas_app" "$RELEASE_APP_BUNDLE_ID" 'Mac App Store app'
 while IFS= read -r extension; do
     assert_mas_signature "$extension" 'Mac App Store embedded extension'
+    assert_signature_identifier "$extension" "$RELEASE_WIDGET_BUNDLE_ID" 'Mac App Store embedded extension'
 done < "$mas_extensions"
 
 extract_entitlements() {
@@ -421,7 +600,7 @@ assert_entitlement_contains() {
     fi
 }
 
-app_group='group.com.slmcamp.CoolCumber'
+app_group="$RELEASE_APP_GROUP"
 assert_entitlement_not_true "$direct_app" com.apple.security.app-sandbox 'Direct app' direct-app
 assert_entitlement_not_true "$direct_app" com.apple.security.get-task-allow 'Direct app' direct-app-debug
 assert_entitlement_contains "$direct_app" com.apple.security.application-groups "$app_group" 'Direct app' direct-app-groups
@@ -449,6 +628,25 @@ while IFS= read -r extension; do
     extension_index=$((extension_index + 1))
 done < "$mas_extensions"
 
+assert_provisioning_application_identifier "$direct_app" "$RELEASE_APP_BUNDLE_ID" 'Direct app' direct-app
+assert_provisioning_application_identifier "$mas_app" "$RELEASE_APP_BUNDLE_ID" 'Mac App Store app' mas-app
+direct_profile_index=0
+while IFS= read -r extension; do
+    assert_provisioning_application_identifier "$extension" "$RELEASE_WIDGET_BUNDLE_ID" 'Direct embedded extension' "direct-extension-$direct_profile_index"
+    direct_profile_index=$((direct_profile_index + 1))
+done < "$direct_extensions"
+mas_profile_index=0
+while IFS= read -r extension; do
+    assert_provisioning_application_identifier "$extension" "$RELEASE_WIDGET_BUNDLE_ID" 'Mac App Store embedded extension' "mas-extension-$mas_profile_index"
+    mas_profile_index=$((mas_profile_index + 1))
+done < "$mas_extensions"
+
+if [ -n "$mas_installer" ]; then
+"$script_directory/validate-mas-pkg.sh" \
+    --pkg "$mas_installer" \
+    --version "$expected_version" \
+    --build "$expected_build" \
+    --team-id "$team_id"
 if ! installer_signature="$(pkgutil --check-signature "$mas_installer" 2>&1)"; then
     printf 'Mac App Store installer signature is invalid: %s\n' "$mas_installer" >&2
     exit 1
@@ -482,6 +680,9 @@ fi
 
 installer_app="$(sed -n '1p' "$installer_apps")"
 assert_bundle_version "$installer_app" 'Mac App Store installer app'
+assert_export_compliance "$installer_app" 'Mac App Store installer app'
+assert_bundle_identifier "$installer_app" "$RELEASE_APP_BUNDLE_ID" 'Mac App Store installer app'
+assert_bundle_privacy "$installer_app" 'Mac App Store installer app'
 assert_mas_signature "$installer_app" 'Mac App Store installer app'
 assert_entitlement_true "$installer_app" com.apple.security.app-sandbox 'Mac App Store installer app' installer-app-sandbox
 assert_entitlement_absent "$installer_app" com.apple.security.network.client 'Mac App Store installer app' installer-app-network
@@ -494,6 +695,8 @@ collect_extensions "$installer_app" "$installer_extensions"
 installer_extension_index=0
 while IFS= read -r extension; do
     assert_bundle_version "$extension" 'Mac App Store installer embedded extension'
+    assert_bundle_identifier "$extension" "$RELEASE_WIDGET_BUNDLE_ID" 'Mac App Store installer embedded extension'
+    assert_widget_privacy "$extension" 'Mac App Store installer embedded extension'
     assert_mas_signature "$extension" 'Mac App Store installer embedded extension'
     assert_entitlement_true "$extension" com.apple.security.app-sandbox 'Mac App Store installer embedded extension' "installer-extension-$installer_extension_index-sandbox"
     assert_entitlement_contains "$extension" com.apple.security.application-groups "$app_group" 'Mac App Store installer embedded extension' "installer-extension-$installer_extension_index-groups"
@@ -507,7 +710,8 @@ if [ "$installer_bundle_id" != "$mas_bundle_id" ]; then
     printf 'Mac App Store installer bundle identifier mismatch: expected %s, got %s\n' "$mas_bundle_id" "$installer_bundle_id" >&2
     exit 1
 fi
-"$repo_root/Scripts/check-channel-boundaries.sh" "$direct_app" "$installer_app"
+"$repo_root/Scripts/check-channel-boundaries.sh" "$direct_app" "$installer_app" "$configuration"
+fi
 
 if ! xcrun --find notarytool > "$work_dir/notarytool-path.txt"; then
     printf '%s\n' 'notarytool is unavailable in the selected Xcode installation.' >&2
@@ -537,10 +741,14 @@ elif [ -n "${NOTARY_KEY_PATH:-}" ] || [ -n "${NOTARY_KEY_ID:-}" ] || [ -n "${NOT
             exit 1
             ;;
     esac
-    if ! grep -q 'BEGIN PRIVATE KEY' "$notary_key_path"; then
-        printf '%s\n' 'NOTARY_KEY_PATH does not contain a recognizable private key.' >&2
-        exit 1
-    fi
+    case "$key_absolute_path" in
+        *.p8)
+            ;;
+        *)
+            printf '%s\n' 'NOTARY_KEY_PATH must reference a .p8 key without reading or exposing its contents.' >&2
+            exit 1
+            ;;
+    esac
     key_mode="$(stat -f '%Lp' "$notary_key_path")"
     case "$key_mode" in
         400|600)
@@ -558,20 +766,8 @@ elif [ -n "${NOTARY_KEY_PATH:-}" ] || [ -n "${NOTARY_KEY_ID:-}" ] || [ -n "${NOT
         printf '%s\n' 'NOTARY_ISSUER_ID must be an App Store Connect issuer UUID.' >&2
         exit 1
     fi
-elif [ -n "${APPLE_ID:-}" ] || [ -n "${APP_SPECIFIC_PASSWORD:-}" ]; then
-    require_value 'APPLE_ID' "${APPLE_ID:-}"
-    require_value 'APP_SPECIFIC_PASSWORD' "${APP_SPECIFIC_PASSWORD:-}"
-    if ! [[ "$APPLE_ID" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; then
-        printf '%s\n' 'APPLE_ID is not a valid email address.' >&2
-        exit 1
-    fi
-    app_password_pattern='^[a-z0-9]{4}(-[a-z0-9]{4}){3}$'
-    if ! [[ "$APP_SPECIFIC_PASSWORD" =~ $app_password_pattern ]]; then
-        printf '%s\n' 'APP_SPECIFIC_PASSWORD does not match the Apple app-specific password format.' >&2
-        exit 1
-    fi
 else
-    printf '%s\n' 'Missing notary credentials. Configure a keychain profile, App Store Connect API key, or Apple ID app-specific password.' >&2
+    printf '%s\n' 'Missing notary credentials. Configure a keychain profile or App Store Connect API key.' >&2
     exit 1
 fi
 
@@ -592,11 +788,17 @@ fi
 
 notary_app="$(sed -n '1p' "$notary_apps")"
 assert_bundle_version "$notary_app" 'Notarization app'
+assert_export_compliance "$notary_app" 'Notarization app'
+assert_bundle_identifier "$notary_app" "$RELEASE_APP_BUNDLE_ID" 'Notarization app'
+assert_bundle_privacy "$notary_app" 'Notarization app'
+assert_no_storekit_test_configuration "$notary_app" 'Notarization app'
 assert_direct_signature "$notary_app" 'Notarization app'
 notary_extensions="$work_dir/notary-extensions.txt"
 collect_extensions "$notary_app" "$notary_extensions"
 while IFS= read -r extension; do
     assert_bundle_version "$extension" 'Notarization embedded extension'
+    assert_bundle_identifier "$extension" "$RELEASE_WIDGET_BUNDLE_ID" 'Notarization embedded extension'
+    assert_widget_privacy "$extension" 'Notarization embedded extension'
     assert_direct_signature "$extension" 'Notarization embedded extension'
 done < "$notary_extensions"
 
@@ -607,11 +809,15 @@ if [ "$notary_bundle_id" != "$direct_bundle_id" ]; then
     exit 1
 fi
 
-if [ ! -x "$notary_app/Contents/Library/LaunchServices/com.coolcumber.helper" ]; then
+if [ ! -x "$notary_app/Contents/Library/LaunchServices/$RELEASE_HELPER_EXECUTABLE_NAME" ]; then
     printf '%s\n' 'Notarization app is missing its signed privileged helper.' >&2
     exit 1
 fi
-assert_direct_signature "$notary_app/Contents/Library/LaunchServices/com.coolcumber.helper" 'Notarization privileged helper'
-"$repo_root/Scripts/check-channel-boundaries.sh" "$notary_app" "$mas_app"
+assert_direct_signature "$notary_app/Contents/Library/LaunchServices/$RELEASE_HELPER_EXECUTABLE_NAME" 'Notarization privileged helper'
+"$repo_root/Scripts/check-channel-boundaries.sh" "$notary_app" "$mas_app" "$configuration"
 
-printf '%s\n' 'Release preflight passed: versions, channel boundaries, signatures, entitlements, installer, and notarization inputs are valid.'
+if [ -n "$mas_installer" ]; then
+    printf '%s\n' 'Release preflight passed: versions, channel boundaries, signatures, entitlements, installer, and notarization inputs are valid.'
+else
+    printf '%s\n' 'Release preflight passed: versions, channel boundaries, signatures, entitlements, and notarization inputs are valid; no MAS installer was supplied.'
+fi

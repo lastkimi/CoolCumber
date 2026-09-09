@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 
 final class DaemonDelegate: NSObject, NSXPCListenerDelegate {
-    private let logger = Logger(subsystem: "com.slmcamp.CoolCumber.helper", category: "xpc")
+    private let logger = Logger(subsystem: "com.slmcamp.CoolCumber.helper.v2", category: "xpc")
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
         guard let consoleUID = activeConsoleUserUID() else {
@@ -18,7 +18,7 @@ final class DaemonDelegate: NSObject, NSXPCListenerDelegate {
         }
 
         let service = DaemonService()
-        newConnection.exportedInterface = NSXPCInterface(with: CoolCumberDaemonProtocol.self)
+        newConnection.exportedInterface = NSXPCInterface(with: CoolCumberMonitorV2Protocol.self)
         newConnection.exportedObject = service
         newConnection.invalidationHandler = { [logger] in
             service.connectionInvalidated()

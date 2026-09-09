@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Combine
+import ThermFlowCore
 
 // MARK: - Product UI state
 
@@ -10,7 +11,12 @@ enum ProductMetricState: Equatable {
     case loading
     case available(value: String, source: String, sampledAt: Date)
     case stale(value: String, source: String, sampledAt: Date)
-    case unavailable(reason: String)
+    case unavailable(
+        reason: String,
+        source: String,
+        observedAt: Date,
+        isStale: Bool
+    )
 
     var displayedValue: String {
         switch self {
@@ -24,6 +30,17 @@ enum ProductMetricState: Equatable {
     }
 
     var sampledAt: Date? {
+        switch self {
+        case let .available(_, _, sampledAt), let .stale(_, _, sampledAt):
+            return sampledAt
+        case let .unavailable(_, _, observedAt, _):
+            return observedAt
+        case .loading:
+            return nil
+        }
+    }
+
+    var availableSampleDate: Date? {
         switch self {
         case let .available(_, _, sampledAt), let .stale(_, _, sampledAt):
             return sampledAt
@@ -43,17 +60,12 @@ enum ProductMetricState: Equatable {
                 "Stale · \(source) · \(ProductDateFormatter.time.string(from: sampledAt))",
                 "数据已过期 · \(source) · \(ProductDateFormatter.time.string(from: sampledAt))"
             )
-        case let .unavailable(reason):
-            return reason
+        case let .unavailable(reason, source, observedAt, isStale):
+            let status = isStale
+                ? productLocalized("Stale unavailable state", "不可用状态已过期")
+                : productLocalized("Unavailable", "不可用")
+            return "\(status) · \(reason) · \(source) · \(ProductDateFormatter.time.string(from: observedAt))"
         }
-    }
-
-    func markingStale(at now: Date, after interval: TimeInterval) -> ProductMetricState {
-        guard case let .available(value, source, sampledAt) = self,
-              now.timeIntervalSince(sampledAt) > interval else {
-            return self
-        }
-        return .stale(value: value, source: source, sampledAt: sampledAt)
     }
 }
 
@@ -119,8 +131,17 @@ func productLocalized(_ english: String, _ chinese: String) -> String {
     LanguageManager.shared.currentLanguage == "zh" ? chinese : english
 }
 
+var productIsBetaBuild: Bool {
+    #if BETA
+    true
+    #else
+    false
+    #endif
+}
+
 /// A thin trusted presentation layer over the existing telemetry service.
-/// It starts read-only sampling only after a user opens a product surface.
+/// Read-only sampling starts with the menu-bar app so history and alerts do not
+/// silently stop when every product window is closed.
 final class ProductUIModel: ObservableObject {
     static let shared = ProductUIModel()
 
@@ -130,7 +151,12 @@ final class ProductUIModel: ObservableObject {
     @Published var memoryPressure: ProductMetricState = .loading
     @Published var cpuUsage: ProductMetricState = .loading
     @Published var thermalPressure: ProductMetricState = .loading
-    @Published var helperStatus: String = productLocalized("Not checked", "尚未检查")
+    @Published var batteryCapacity: ProductMetricState = .loading
+    @Published var batteryCycles: ProductMetricState = .loading
+    @Published var batteryCondition: ProductMetricState = .loading
+    @Published private(set) var diagnosis: Diagnosis
+    @Published private(set) var helperSetupRequested = false
+    @Published private(set) var helperRuntimeStatus = "Not Installed"
     @Published var menuBarDisplayMode: ProductMenuBarDisplayMode {
         didSet {
             UserDefaults.standard.set(menuBarDisplayMode.rawValue, forKey: Self.menuBarDisplayModeKey)
@@ -138,31 +164,42 @@ final class ProductUIModel: ObservableObject {
     }
 
     private static let menuBarDisplayModeKey = "productMenuBarDisplayMode"
-    private let staleInterval: TimeInterval = 15
     private let daemon = DaemonManager.shared
+    private let diagnosisEvaluator: DiagnosisEvaluator
     private var cancellables = Set<AnyCancellable>()
     private var staleTimer: Timer?
     private var monitoringStarted = false
-    private var latestTemperature: Double?
+    private var latestSnapshot: SystemSnapshot
 
     private init() {
+        let initialSnapshot = DaemonManager.shared.systemSnapshot
+        let evaluator = DiagnosisEvaluator()
         let storedMode = UserDefaults.standard.string(forKey: Self.menuBarDisplayModeKey)
-        menuBarDisplayMode = ProductMenuBarDisplayMode(rawValue: storedMode ?? "") ?? .temperature
+        #if APPSTORE
+        let defaultMenuBarMode = ProductMenuBarDisplayMode.iconOnly
+        #else
+        let defaultMenuBarMode = ProductMenuBarDisplayMode.temperature
+        #endif
+        menuBarDisplayMode = ProductMenuBarDisplayMode(rawValue: storedMode ?? "")
+            ?? defaultMenuBarMode
+        latestSnapshot = initialSnapshot
+        diagnosisEvaluator = evaluator
+        diagnosis = evaluator.evaluate(initialSnapshot, at: Date())
+        apply(initialSnapshot, at: Date())
         observeTelemetry()
     }
 
     var isAppStoreEdition: Bool {
-        #if APPSTORE
-        return true
-        #else
-        return false
-        #endif
+        latestSnapshot.channel == .appStore
     }
 
     var editionName: String {
-        isAppStoreEdition
+        let edition = isAppStoreEdition
             ? productLocalized("App Store Monitor", "App Store 监测版")
             : productLocalized("Direct", "官网直装版")
+        return productIsBetaBuild
+            ? edition + productLocalized(" · Beta Preview", " · 免费 Beta")
+            : edition
     }
 
     var hasNotchedScreen: Bool {
@@ -172,28 +209,84 @@ final class ProductUIModel: ObservableObject {
     }
 
     var overallHealth: ProductHealthLevel {
-        let thermal = daemon.thermalStatus.lowercased()
-        if thermal.contains("critical") {
-            return .critical
-        }
-        if thermal.contains("serious") || thermal.contains("fair") {
+        switch diagnosis.status {
+        case .healthy:
+            return .healthy
+        case .warning:
             return .elevated
+        case .critical:
+            return .critical
+        case .insufficientData:
+            return .unavailable
         }
-        if let latestTemperature {
-            if latestTemperature >= 90 { return .critical }
-            if latestTemperature >= 75 { return .elevated }
-            return .healthy
-        }
-        if thermal.contains("nominal") || thermal.contains("normal") {
-            return .healthy
-        }
-        return .unavailable
     }
 
     var freshestSampleDate: Date? {
-        [temperature, fanSpeed, memoryPressure, cpuUsage, thermalPressure]
-            .compactMap(\.sampledAt)
+        [
+            temperature,
+            fanSpeed,
+            memoryPressure,
+            cpuUsage,
+            thermalPressure,
+            batteryCapacity,
+            batteryCycles,
+            batteryCondition
+        ]
+            .compactMap(\.availableSampleDate)
             .max()
+    }
+
+    var hardwareMonitoringReady: Bool {
+        latestSnapshot.capabilities.allows(.cpuTemperature)
+            || latestSnapshot.capabilities.allows(.fanRead)
+    }
+
+    func hardwareMonitoringStatus(isChinese: Bool) -> String {
+        if hardwareMonitoringReady {
+            return isChinese ? "可信硬件读数已启用" : "Trusted hardware readings enabled"
+        }
+        if helperRuntimeStatus.contains("Retiring Legacy Helper") {
+            return isChinese
+                ? "正在安全撤销旧版辅助组件"
+                : "Securely retiring the legacy helper"
+        }
+        if helperRuntimeStatus.contains("Manual Removal Required") {
+            return isChinese
+                ? "检测到旧式 root 组件；需按安全指南手动移除"
+                : "Legacy root helper detected; follow the safe removal guide"
+        }
+        if helperRuntimeStatus.contains("Failed")
+            || helperRuntimeStatus.contains("Could Not Be Verified")
+            || helperRuntimeStatus.contains("Status Unknown") {
+            return isChinese
+                ? "辅助组件安全迁移失败：\(helperRuntimeStatus)"
+                : helperRuntimeStatus
+        }
+        if helperRuntimeStatus.contains("Legacy Helper") {
+            return isChinese
+                ? "检测到旧版组件；需要安全迁移"
+                : "Legacy helper detected; secure migration required"
+        }
+        if helperRuntimeStatus.contains("Approval Required") {
+            return isChinese ? "需要在系统设置中批准" : "Approval required in System Settings"
+        }
+        if helperRuntimeStatus.contains("Error") {
+            return isChinese
+                ? "辅助组件设置失败；可安全重试"
+                : "Helper setup failed; it is safe to retry"
+        }
+        if helperRuntimeStatus.contains("Not Found") {
+            return isChinese
+                ? "当前安装中缺少安全辅助组件"
+                : "The secure helper is missing from this installation"
+        }
+        if helperSetupRequested {
+            return isChinese ? "正在检查辅助组件状态" : "Checking helper status"
+        }
+        let temperatureState = latestSnapshot.capabilities.state(for: .cpuTemperature)
+        let fanState = latestSnapshot.capabilities.state(for: .fanRead)
+        let state = preferredCapabilityState(temperatureState, fanState)
+        return capabilityAvailabilityText(state.availability, isChinese: isChinese)
     }
 
     func healthTitle(isChinese: Bool) -> String {
@@ -210,23 +303,31 @@ final class ProductUIModel: ObservableObject {
     }
 
     func healthMessage(isChinese: Bool) -> String {
-        switch overallHealth {
-        case .healthy:
+        switch diagnosis.code {
+        case .noAlertsInAvailableMetrics:
             return isChinese
-                ? "已获得的系统读数未显示明显热压力。"
-                : "Available system readings show no significant thermal pressure."
-        case .elevated:
+                ? "DiagnosisEvaluator 未在新鲜且可用的指标中发现异常。"
+                : "DiagnosisEvaluator found no alert in fresh, available metrics."
+        case .insufficientData:
             return isChinese
-                ? "温度或系统热压力升高，请查看各指标的来源和更新时间。"
-                : "Temperature or system thermal pressure is elevated. Review each reading and its freshness."
-        case .critical:
-            return isChinese
-                ? "系统报告严重热压力或高温，请先保存工作并降低负载。"
-                : "The system reports critical thermal pressure or temperature. Save your work and reduce load."
-        case .unavailable:
-            return isChinese
-                ? "CoolCumber 不会用估算值代替缺失的传感器数据。"
-                : "CoolCumber does not replace missing sensor data with estimates."
+                ? "没有足够的新鲜可信指标；CoolCumber 不会用估算值代替。"
+                : "There are not enough fresh trusted metrics; CoolCumber does not substitute estimates."
+        case .thermalPressureFair:
+            return isChinese ? "macOS 报告热压力升高。" : "macOS reports elevated thermal pressure."
+        case .thermalPressureSerious:
+            return isChinese ? "macOS 报告较严重的热压力。" : "macOS reports serious thermal pressure."
+        case .thermalPressureCritical:
+            return isChinese ? "macOS 报告严重热压力，请保存工作并降低负载。" : "macOS reports critical thermal pressure. Save your work and reduce load."
+        case .highCPUTemperature:
+            return isChinese ? "可信 CPU 温度读数已超过警戒阈值。" : "The trusted CPU temperature exceeds the warning threshold."
+        case .criticalCPUTemperature:
+            return isChinese ? "可信 CPU 温度读数已超过严重阈值。" : "The trusted CPU temperature exceeds the critical threshold."
+        case .highMemoryUsage:
+            return isChinese ? "可信内存使用率已超过警戒阈值。" : "Trusted memory use exceeds the warning threshold."
+        case .highCPUUsage:
+            return isChinese ? "可信 CPU 使用率已超过警戒阈值。" : "Trusted CPU use exceeds the warning threshold."
+        case .lowDiskSpace:
+            return isChinese ? "可信存储读数显示可用空间不足。" : "Trusted storage data reports low available space."
         }
     }
 
@@ -236,13 +337,7 @@ final class ProductUIModel: ObservableObject {
 
         daemon.startPolling()
         staleTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            self?.markOldReadingsStale()
-        }
-
-        // A disconnected Direct helper may never publish an empty payload. End
-        // the loading state without inventing values after the first attempt.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.settleLoadingStates()
+            self?.refreshPresentationFreshness()
         }
     }
 
@@ -263,203 +358,240 @@ final class ProductUIModel: ObservableObject {
 
     func requestHelperSetup() {
         #if !APPSTORE
+        helperSetupRequested = true
         daemon.installDaemonIfNeeded()
         #endif
     }
 
     private func observeTelemetry() {
-        daemon.$temperatures
+        daemon.$systemSnapshot
             .receive(on: RunLoop.main)
-            .sink { [weak self] readings in
+            .sink { [weak self] snapshot in
                 guard let self else { return }
-                guard let value = readings["CPU"], value.isFinite, (-20...130).contains(value) else {
-                    if self.monitoringStarted {
-                        self.latestTemperature = nil
-                        self.temperature = .unavailable(reason: self.temperatureUnavailableReason)
-                    }
-                    return
-                }
-                self.latestTemperature = value
-                self.temperature = .available(
-                    value: String(format: "%.0f", value),
-                    source: productLocalized("Hardware sensor", "硬件传感器"),
-                    sampledAt: Date()
-                )
-            }
-            .store(in: &cancellables)
-
-        daemon.$fanSpeed
-            .receive(on: RunLoop.main)
-            .sink { [weak self] rawValue in
-                guard let self else { return }
-                let token = rawValue.split(separator: " ").first.flatMap { Double($0) }
-                guard let rpm = token, rpm.isFinite, rpm >= 0 else {
-                    if self.monitoringStarted {
-                        self.fanSpeed = .unavailable(reason: self.fanUnavailableReason)
-                    }
-                    return
-                }
-                self.fanSpeed = .available(
-                    value: String(format: "%.0f", rpm),
-                    source: productLocalized("Fan controller", "风扇控制器"),
-                    sampledAt: Date()
-                )
-            }
-            .store(in: &cancellables)
-
-        daemon.$memoryStats
-            .receive(on: RunLoop.main)
-            .sink { [weak self] stats in
-                guard let self else { return }
-                guard let used = stats["used"], let total = stats["total"], total > 0 else {
-                    if self.monitoringStarted {
-                        self.memoryPressure = .unavailable(
-                            reason: productLocalized("Memory statistics are unavailable", "无法读取内存统计")
-                        )
-                    }
-                    return
-                }
-                let percentage = min(100, max(0, used / total * 100))
-                self.memoryPressure = .available(
-                    value: String(format: "%.0f", percentage),
-                    source: productLocalized("macOS host statistics", "macOS 主机统计"),
-                    sampledAt: Date()
-                )
-            }
-            .store(in: &cancellables)
-
-        daemon.$cpuUsage
-            .combineLatest(daemon.$currentCpuPercent)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] ticks, percentage in
-                guard let self else { return }
-                guard !ticks.isEmpty, percentage.isFinite else {
-                    if self.monitoringStarted {
-                        self.cpuUsage = .unavailable(
-                            reason: productLocalized("CPU usage is unavailable", "无法读取 CPU 使用率")
-                        )
-                    }
-                    return
-                }
-                self.cpuUsage = .available(
-                    value: String(format: "%.0f", min(100, max(0, percentage))),
-                    source: productLocalized("macOS processor statistics", "macOS 处理器统计"),
-                    sampledAt: Date()
-                )
-            }
-            .store(in: &cancellables)
-
-        daemon.$thermalStatus
-            .receive(on: RunLoop.main)
-            .sink { [weak self] status in
-                guard let self else { return }
-                let normalized = status.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !normalized.isEmpty,
-                      normalized.lowercased() != "unknown",
-                      !normalized.lowercased().contains("failed"),
-                      !normalized.lowercased().contains("error") else {
-                    if self.monitoringStarted {
-                        self.thermalPressure = .unavailable(
-                            reason: productLocalized("System thermal pressure is unavailable", "无法读取系统热压力")
-                        )
-                    }
-                    return
-                }
-                self.thermalPressure = .available(
-                    value: self.friendlyThermalStatus(normalized),
-                    source: self.isAppStoreEdition
-                        ? "ProcessInfo.thermalState"
-                        : productLocalized("Trusted helper", "可信辅助组件"),
-                    sampledAt: Date()
-                )
+                self.latestSnapshot = snapshot
+                self.apply(snapshot, at: Date())
             }
             .store(in: &cancellables)
 
         daemon.$daemonStatus
             .receive(on: RunLoop.main)
             .sink { [weak self] status in
-                self?.helperStatus = status
+                self?.helperRuntimeStatus = status
             }
             .store(in: &cancellables)
+
     }
 
-    private func settleLoadingStates() {
-        guard monitoringStarted else { return }
-        if temperature == .loading {
-            temperature = .unavailable(reason: temperatureUnavailableReason)
+    private func refreshPresentationFreshness() {
+        apply(latestSnapshot, at: Date())
+    }
+
+    private func apply(_ snapshot: SystemSnapshot, at referenceDate: Date) {
+        temperature = metricState(
+            snapshot.thermal.cpuTemperature,
+            at: referenceDate
+        ) { String(format: "%.0f", $0.value) }
+
+        thermalPressure = metricState(
+            snapshot.thermal.pressure,
+            at: referenceDate
+        ) { thermalPressureText($0) }
+
+        cpuUsage = metricState(snapshot.cpu.usage, at: referenceDate) {
+            String(format: "%.0f", $0.value)
         }
-        if fanSpeed == .loading {
-            fanSpeed = .unavailable(reason: fanUnavailableReason)
+
+        memoryPressure = metricState(snapshot.memory.usage, at: referenceDate) {
+            String(format: "%.0f", $0.value)
         }
-        if memoryPressure == .loading {
-            memoryPressure = .unavailable(
-                reason: productLocalized("Memory statistics are unavailable", "无法读取内存统计")
+
+        if let firstFan = snapshot.fans.first {
+            fanSpeed = metricState(firstFan.currentSpeed, at: referenceDate) {
+                String($0.value)
+            }
+        } else {
+            fanSpeed = missingFanState(snapshot: snapshot, at: referenceDate)
+        }
+
+        batteryCapacity = metricState(snapshot.battery.maximumCapacity, at: referenceDate) {
+            String(format: "%.0f", $0.value)
+        }
+        batteryCycles = metricState(snapshot.battery.cycleCount, at: referenceDate) {
+            String($0)
+        }
+        batteryCondition = metricState(snapshot.battery.condition, at: referenceDate) {
+            batteryConditionText($0)
+        }
+
+        diagnosis = diagnosisEvaluator.evaluate(snapshot, at: referenceDate)
+    }
+
+    private func metricState<Value>(
+        _ sample: MetricSample<Value>,
+        at referenceDate: Date,
+        formatter: (Value) -> String
+    ) -> ProductMetricState where Value: Codable & Equatable & Sendable {
+        let maximumAge = diagnosisEvaluator.thresholds.maximumMetricAge.value
+        let freshness = sample.freshness(at: referenceDate, maximumAge: maximumAge)
+        let source = provenanceText(sample.provenance)
+
+        guard sample.availability == .available, let value = sample.value else {
+            return .unavailable(
+                reason: metricAvailabilityText(sample.availability, failure: sample.failure),
+                source: source,
+                observedAt: sample.observedAt,
+                isStale: freshness == .stale
             )
         }
-        if cpuUsage == .loading {
-            cpuUsage = .unavailable(
-                reason: productLocalized("CPU usage is unavailable", "无法读取 CPU 使用率")
+
+        let displayValue = formatter(value)
+        if freshness == .stale {
+            return .stale(
+                value: displayValue,
+                source: source,
+                sampledAt: sample.observedAt
             )
         }
-        if thermalPressure == .loading {
-            thermalPressure = .unavailable(
-                reason: productLocalized("System thermal pressure is unavailable", "无法读取系统热压力")
-            )
+        return .available(
+            value: displayValue,
+            source: source,
+            sampledAt: sample.observedAt
+        )
+    }
+
+    private func missingFanState(
+        snapshot: SystemSnapshot,
+        at referenceDate: Date
+    ) -> ProductMetricState {
+        let capability = snapshot.capabilities.state(for: .fanRead)
+        let maximumAge = diagnosisEvaluator.thresholds.maximumMetricAge.value
+        let capabilityAge = referenceDate.timeIntervalSince(capability.evaluatedAt)
+        let isStale = !capabilityAge.isFinite
+            || capabilityAge < 0
+            || capabilityAge > maximumAge
+        return .unavailable(
+            reason: capabilityAvailabilityText(
+                capability.availability,
+                reasonCode: capability.reasonCode,
+                isChinese: LanguageManager.shared.currentLanguage == "zh"
+            ),
+            source: productLocalized("Capability model", "能力模型"),
+            observedAt: capability.evaluatedAt,
+            isStale: isStale
+        )
+    }
+
+    private func metricAvailabilityText(
+        _ availability: MetricAvailability,
+        failure: MetricFailure?
+    ) -> String {
+        if let message = failure?.message, !message.isEmpty {
+            return message
+        }
+        switch availability {
+        case .available:
+            return productLocalized("Available sample has no value", "可用样本缺少数值")
+        case .unsupported:
+            return productLocalized("Unsupported on this edition or device", "当前版本或设备不支持")
+        case .notPresent:
+            return productLocalized("Sensor is not present", "设备不存在此传感器")
+        case .permissionRequired:
+            return productLocalized("Permission is required", "需要授权")
+        case .temporarilyUnavailable:
+            return productLocalized("Temporarily unavailable", "暂时不可用")
+        case .failed:
+            if let code = failure?.code {
+                return productLocalized("Collection failed (\(code))", "采集失败（\(code)）")
+            }
+            return productLocalized("Collection failed", "采集失败")
+        case .unknown:
+            return productLocalized("Not evaluated yet", "尚未完成评估")
         }
     }
 
-    private func markOldReadingsStale() {
-        let now = Date()
-        temperature = temperature.markingStale(at: now, after: staleInterval)
-        fanSpeed = fanSpeed.markingStale(at: now, after: staleInterval)
-        memoryPressure = memoryPressure.markingStale(at: now, after: staleInterval)
-        cpuUsage = cpuUsage.markingStale(at: now, after: staleInterval)
-        thermalPressure = thermalPressure.markingStale(at: now, after: staleInterval)
+    private func provenanceText(_ provenance: MetricProvenance) -> String {
+        let source: String
+        switch provenance.source {
+        case .smc: source = "SMC"
+        case .processInfo: source = "ProcessInfo"
+        case .machKernel: source = productLocalized("Mach kernel", "Mach 内核")
+        case .ioKit: source = "IOKit"
+        case .fileSystem: source = productLocalized("File system", "文件系统")
+        case .networkInterface: source = productLocalized("Network interface", "网络接口")
+        case .systemProfiler: source = "System Profiler"
+        case .powermetrics: source = "powermetrics"
+        case .derived: source = productLocalized("Derived metric", "派生指标")
+        case .fixture: source = productLocalized("Test fixture", "测试样本")
+        case .unknown: source = productLocalized("Unknown source", "未知来源")
+        }
+
+        let quality: String
+        switch provenance.quality {
+        case .measured: quality = productLocalized("measured", "实测")
+        case .systemReported: quality = productLocalized("system reported", "系统报告")
+        case .derived: quality = productLocalized("derived", "派生")
+        case .fixture: quality = productLocalized("fixture", "测试数据")
+        case .unknown: quality = productLocalized("unverified", "未验证")
+        }
+        return "\(source) · \(quality)"
     }
 
-    private var temperatureUnavailableReason: String {
-        #if APPSTORE
-        return productLocalized(
-            "The App Store sandbox does not expose sensor temperatures",
-            "App Store 沙盒不提供传感器温度"
-        )
-        #else
-        return productLocalized(
-            "No verified temperature reading; helper setup may be required",
-            "没有可信温度读数；可能需要设置辅助组件"
-        )
-        #endif
+    private func thermalPressureText(_ pressure: ThermalPressure) -> String {
+        switch pressure {
+        case .nominal: return productLocalized("Normal", "正常")
+        case .fair: return productLocalized("Elevated", "升高")
+        case .serious: return productLocalized("Serious", "较高")
+        case .critical: return productLocalized("Critical", "严重")
+        }
     }
 
-    private var fanUnavailableReason: String {
-        #if APPSTORE
-        return productLocalized(
-            "The App Store sandbox does not expose fan RPM",
-            "App Store 沙盒不提供风扇转速"
-        )
-        #else
-        return productLocalized(
-            "No verified fan reading; helper setup may be required",
-            "没有可信风扇读数；可能需要设置辅助组件"
-        )
-        #endif
+    private func batteryConditionText(_ condition: BatteryCondition) -> String {
+        switch condition {
+        case .normal: return productLocalized("Normal", "正常")
+        case .serviceRecommended: return productLocalized("Service recommended", "建议检修")
+        case .unknown: return productLocalized("Unknown", "未知")
+        }
     }
 
-    private func friendlyThermalStatus(_ status: String) -> String {
-        let normalized = status.lowercased()
-        if normalized.contains("critical") {
-            return productLocalized("Critical", "严重")
+    private func preferredCapabilityState(
+        _ first: CapabilityState,
+        _ second: CapabilityState
+    ) -> CapabilityState {
+        let priority: (CapabilityAvailability) -> Int = { availability in
+            switch availability {
+            case .available: return 6
+            case .authorizationRequired: return 5
+            case .temporarilyUnavailable: return 4
+            case .unknown: return 3
+            case .notPresent: return 2
+            case .unsupported: return 1
+            }
         }
-        if normalized.contains("serious") {
-            return productLocalized("Serious", "较高")
+        return priority(first.availability) >= priority(second.availability) ? first : second
+    }
+
+    private func capabilityAvailabilityText(
+        _ availability: CapabilityAvailability,
+        reasonCode: String? = nil,
+        isChinese: Bool
+    ) -> String {
+        switch availability {
+        case .available:
+            return isChinese ? "可用" : "Available"
+        case .unsupported:
+            return isChinese ? "当前版本或设备不支持" : "Unsupported on this edition or device"
+        case .notPresent:
+            return isChinese ? "设备不存在相应硬件" : "Required hardware is not present"
+        case .authorizationRequired:
+            return isChinese ? "需要在系统设置中批准" : "Approval is required in System Settings"
+        case .temporarilyUnavailable:
+            return isChinese ? "暂时不可用" : "Temporarily unavailable"
+        case .unknown:
+            if let reasonCode, !reasonCode.isEmpty {
+                return isChinese ? "尚未完成评估（\(reasonCode)）" : "Not evaluated yet (\(reasonCode))"
+            }
+            return isChinese ? "尚未完成评估" : "Not evaluated yet"
         }
-        if normalized.contains("fair") {
-            return productLocalized("Elevated", "升高")
-        }
-        if normalized.contains("nominal") || normalized.contains("normal") {
-            return productLocalized("Normal", "正常")
-        }
-        return status
     }
 }
 
@@ -515,9 +647,9 @@ final class MenuBarManager: NSObject, NSPopoverDelegate {
     private func configureStatusItem() {
         guard let button = statusItem.button else { return }
         let image = NSImage(
-            systemSymbolName: "fanblades.fill",
+            systemSymbolName: "leaf.fill",
             accessibilityDescription: "CoolCumber"
-        ) ?? NSImage(systemSymbolName: "wind", accessibilityDescription: "CoolCumber")
+        ) ?? NSImage(systemSymbolName: "fanblades.fill", accessibilityDescription: "CoolCumber")
         let configuration = NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
         button.image = image?.withSymbolConfiguration(configuration)
         button.image?.isTemplate = true
@@ -555,6 +687,7 @@ final class MenuBarManager: NSObject, NSPopoverDelegate {
     private func showContextMenu() {
         let menu = NSMenu()
         menu.addItem(withTitle: productLocalized("Open CoolCumber", "打开 CoolCumber"), action: #selector(openDashboard), keyEquivalent: "")
+        menu.addItem(withTitle: productLocalized("History & Alerts", "历史与提醒"), action: #selector(openHistory), keyEquivalent: "h")
         menu.addItem(withTitle: productLocalized("Refresh Readings", "刷新读数"), action: #selector(refreshReadings), keyEquivalent: "r")
         menu.addItem(withTitle: productLocalized("Settings…", "设置…"), action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(.separator())
@@ -591,6 +724,11 @@ final class MenuBarManager: NSObject, NSPopoverDelegate {
         openDashboard()
     }
 
+    @objc private func openHistory() {
+        ProductUIModel.shared.selectedSection = .history
+        openDashboard()
+    }
+
     /// Kept for compatibility with the previous DashboardView close control.
     @objc func closePopover() {
         popover.performClose(nil)
@@ -610,8 +748,10 @@ final class MenuBarManager: NSObject, NSPopoverDelegate {
             switch temperature {
             case .loading:
                 suffix = " …"
-            case let .available(value, _, _), let .stale(value, _, _):
+            case let .available(value, _, _):
                 suffix = " \(value)°"
+            case let .stale(value, _, _):
+                suffix = " ~\(value)°"
             case .unavailable:
                 suffix = " —"
             }
@@ -634,8 +774,11 @@ final class MenuBarManager: NSObject, NSPopoverDelegate {
                 "CoolCumber · Stale CPU reading \(value)°C · \(ProductDateFormatter.time.string(from: sampledAt))",
                 "CoolCumber · CPU 旧读数 \(value)°C · \(ProductDateFormatter.time.string(from: sampledAt))"
             )
-        case let .unavailable(reason):
-            return "CoolCumber · \(reason)"
+        case let .unavailable(reason, source, observedAt, isStale):
+            let state = isStale
+                ? productLocalized("stale", "已过期")
+                : productLocalized("unavailable", "不可用")
+            return "CoolCumber · \(state) · \(reason) · \(source) · \(ProductDateFormatter.time.string(from: observedAt))"
         }
     }
 }
@@ -649,7 +792,8 @@ private struct ProductMenuPopoverView: View {
     private var isChinese: Bool { language.currentLanguage == "zh" }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: model.overallHealth.symbol)
                     .font(.system(size: 24, weight: .semibold))
@@ -690,7 +834,6 @@ private struct ProductMenuPopoverView: View {
                 )
             }
 
-            Spacer(minLength: 0)
             Divider()
 
             HStack {
@@ -718,8 +861,9 @@ private struct ProductMenuPopoverView: View {
                 .help(isChinese ? "退出 CoolCumber" : "Quit CoolCumber")
                 .accessibilityLabel(isChinese ? "退出 CoolCumber" : "Quit CoolCumber")
             }
+            }
+            .padding(18)
         }
-        .padding(18)
         .frame(width: 360, height: 430)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
@@ -747,7 +891,8 @@ private struct ProductMenuMetricRow: View {
                 Text(state.supportingText)
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer()

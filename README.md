@@ -1,73 +1,74 @@
-# CoolCumber 🥒
+# CoolCumber
 
 **English** | [中文](README_zh.md)
 
-**CoolCumber** is an intelligent, sleek, and AI-driven Mac cooling and system optimization tool. Born out of the necessity to keep your macOS running cool and efficient, it features a stunning 3D interactive interface, background process management, thermal monitoring, and deep junk cleanup capabilities.
+CoolCumber is a quiet, local-first health monitor for macOS 13 and later. It
+shows what the Mac can actually report, marks stale or unsupported readings
+explicitly, and never fills missing sensor data with invented values.
 
-<p align="center">
-  <img src="docs/images/app_screenshot.jpg" alt="CoolCumber UI" width="700">
-</p>
+## What it does
 
----
+- A lightweight menu bar summary and a resizable native macOS dashboard.
+- Trusted CPU load, memory, thermal-pressure, storage, battery, and supported
+  hardware readings with source and freshness information.
+- A WidgetKit extension that reads the latest real snapshot through an App
+  Group and clearly shows stale or unavailable data.
+- Compact local history: 24 hours in Free, up to 30 days in Pro.
+- Pro local health alerts based on fresh available readings, plus
+  spreadsheet-safe CSV history export.
+- English and Simplified Chinese UI, including a menu-bar-first experience for
+  2019 Intel MacBook Pro models without a display notch.
 
-## 🌟 Key Features
+CoolCumber does not automatically kill or freeze processes, manufacture memory
+pressure, clean personal application data, change battery charging behavior, or
+write fan settings. Unsupported controls are not sold as Pro features.
 
-### 🌡️ Geek-Grade Thermal & Power Monitoring
-<p align="center">
-  <img src="docs/images/widget_screenshot.jpg" alt="CoolCumber Widget" width="300" align="right" style="margin-left: 20px;">
-</p>
+## Editions and pricing
 
-- **Real-time Dashboard**: A stunning 3D UI that displays real-time CPU temperature, memory usage, and battery power.
-- **Historical Trends**: Intuitive CPU thermal and load history graphs that accurately map temperature fluctuations in the 40°C to 95°C range, helping you understand your system's heat dissipation at a glance.
+The Mac App Store edition is sandboxed and never installs a privileged helper.
+Some low-level temperature and fan sensors are therefore unavailable and are
+shown as such. The Direct edition can offer an explicitly approved, signed
+helper for supported read-only hardware monitoring.
 
-### 🛡️ Rogue App Killer
-- **Silent Guardian**: Intelligently detects and analyzes background processes that consume excessive CPU and memory without your knowledge.
-- **One-Click Freeze**: Instantly terminate stubborn resource-hogging background applications to cool down your system immediately.
+Core live monitoring and 24-hour local history are free. CoolCumber Pro is a
+one-time, non-consumable Mac App Store purchase launching at US$19.99. Pro adds
+30-day local history, configurable local alerts, and CSV export. The first paid
+launch is Mac App Store only; Direct checkout stays disabled until a signed
+license service and public verification key are deployed. Beta Preview builds
+temporarily unlock eligible Pro features without creating a purchase or
+permanent license. Direct previews carry a fixed access window of no more than
+45 days and fail closed to Free after it expires.
 
-### 🧹 Deep System Optimizer
-- **Comprehensive Scan**: Deeply scans your macOS for application caches, temporary files, and useless log remnants.
-- **One-Click Cleanup**: Free up valuable disk storage space and keep your system running light and fast.
+## Privacy and security
 
-### 🤖 Built by Agentic Studio
-The core codebase of this project was primarily developed autonomously by Google Antigravity AI agents. From low-level system API integrations to highly customized 3D frontend animations, it demonstrates the phenomenal power of Agentic Coding in modern software engineering.
+Telemetry and history remain on the Mac. CoolCumber contains no advertising or
+third-party analytics and does not upload telemetry by default. See
+[PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).
 
----
+Official Direct builds are signed with Developer ID and notarized by Apple.
+Mac App Store builds are distributed by Apple. Do not install unsigned mirrors.
+Release changes are recorded in [CHANGELOG.md](CHANGELOG.md).
 
-## 🚀 Quick Start Tutorial
+## Build from source
 
-### 1. Installation
-1. Go to the [Releases page](https://github.com/lastkimi/CoolCumber/releases) and download the latest `CoolCumber.dmg`.
-2. Double-click the downloaded `.dmg` file and drag `CoolCumber` into your **Applications** folder.
-3. Open CoolCumber from Launchpad. On first launch, macOS may prompt you to grant necessary permissions (such as Full Disk Access or Accessibility permissions). Please allow these in System Preferences so the app can correctly read thermal sensors and clear system caches.
+Requirements: Xcode, Swift 5.9 or later, and
+[XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
-### 2. User Guide
-- **Check Status**: Click the snowflake/fan icon in your Mac's menu bar to expand the beautiful floating dashboard and view real-time percentages and temperatures for CPU, RAM, and Battery.
-- **Clean Junk**: Switch to the "System Optimizer" tab, click **Scan**, wait a few seconds for the analysis to complete, and then click **Clean** to free up space.
-- **Manage Processes**: Switch to the "App Freezer" tab to monitor current high-load background applications. Terminate any rogue apps you don't need with a single click.
-- **Language Toggle**: You can freely switch between English and Chinese in the Settings panel for a native localization experience.
+```bash
+xcodegen generate
+swift test --package-path Packages/ThermFlowCore
+xcodebuild -project MacThermFlow.xcodeproj -scheme ThermFlowApp \
+  -configuration Debug -destination 'platform=macOS' build
+```
 
----
+The repository keeps Direct and Mac App Store capabilities separate. Run the
+checked-in release gates before producing distribution artifacts:
 
-## 🛠️ Build from Source
+```bash
+Scripts/ci-secret-scan.sh
+Scripts/check-project-boundaries.rb project.yml 1.2.0 3
+```
 
-If you want to contribute or build this project yourself, you will need to install [XcodeGen](https://github.com/yonaskolb/XcodeGen) (or install via Homebrew: `brew install xcodegen`).
+## License
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/lastkimi/CoolCumber.git
-   ```
-2. **Navigate to the project directory**:
-   ```bash
-   cd CoolCumber
-   ```
-3. **Generate the Xcode project**:
-   ```bash
-   xcodegen generate
-   ```
-4. **Compile & Run**:
-   Open the generated `.xcodeproj` file and build it using Xcode on your Mac.
-
----
-
-## 📄 License
-This project is licensed under the **MIT License**. You are free to use, modify, and distribute this software. See the [LICENSE](LICENSE) file for details.
+Source code in this repository is available under the [MIT License](LICENSE).

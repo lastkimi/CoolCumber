@@ -1,0 +1,47 @@
+{
+  "identifier" : "F2F62114-50C2-4EC8-A52B-3946640545B1",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "19.99",
+      "familyShareable" : false,
+      "internalID" : "DBF64FD5-DC7B-4FBB-A045-9934B9CB4C66",
+      "localizations" : [
+        {
+          "description" : "Unlock 30-day history, trusted health alerts, and CSV export with one purchase.",
+          "displayName" : "CoolCumber Pro",
+          "locale" : "en_US"
+        },
+        {
+          "description" : "一次购买即可解锁 30 天历史、可信健康提醒和 CSV 导出。",
+          "displayName" : "CoolCumber Pro",
+          "locale" : "zh_CN"
+        }
+      ],
+      "productID" : "com.slmcamp.CoolCumber.pro.lifetime",
+      "referenceName" : "CoolCumber Pro Lifetime",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "6802703012",
+    "_developerTeamID" : "BSKR6CQ765",
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_renewalBillingIssuesEnabled" : false,
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ],
+    "_timeRate" : 0
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

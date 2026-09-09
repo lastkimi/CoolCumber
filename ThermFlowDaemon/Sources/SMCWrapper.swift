@@ -144,32 +144,6 @@ public class SMCWrapper {
         return nil
     }
     
-    public func writeValue(key: String, bytes: [UInt8]) -> Bool {
-        let keyCode = stringToUInt32(key)
-        guard let info = getKeyInfo(key: keyCode) else { return false }
-        guard info.dataSize > 0,
-              info.dataSize <= 32,
-              bytes.count == Int(info.dataSize) else {
-            return false
-        }
-        
-        var input = SMCParamStruct()
-        var output = SMCParamStruct()
-        
-        input.key = keyCode
-        input.data8 = 6 // kSMCWriteKey
-        input.keyInfo = info
-        
-        withUnsafeMutableBytes(of: &input.bytes) { ptr in
-            for i in 0..<min(bytes.count, ptr.count) {
-                ptr[i] = bytes[i]
-            }
-        }
-        
-        let result = callSMC(index: 2, inputStruct: &input, outputStruct: &output)
-        return result == kIOReturnSuccess
-    }
-    
     public func stringToUInt32(_ str: String) -> UInt32 {
         var result: UInt32 = 0
         let data = str.data(using: .ascii) ?? Data()
@@ -210,7 +184,7 @@ public class SMCWrapper {
             let data = Data(bytes)
             _ = withUnsafeMutableBytes(of: &f) { data.copyBytes(to: $0) }
             return Double(f)
-        } else if (typeStr == "fpe2" || typeStr == "sp78") && bytes.count >= 2 {
+        } else if typeStr == "fpe2" && bytes.count >= 2 {
             let val = (UInt16(bytes[0]) << 8) | UInt16(bytes[1])
             return Double(val) / 4.0
         } else if typeStr == "ui16" && bytes.count >= 2 {
@@ -218,38 +192,6 @@ public class SMCWrapper {
             return Double(val)
         }
         return nil
-    }
-    
-    public func writeFanSpeed(key: String, rpm: Double) -> Bool {
-        guard rpm.isFinite, rpm >= 0 else { return false }
-
-        let keyCode = stringToUInt32(key)
-        guard let info = getKeyInfo(key: keyCode) else { return false }
-        
-        let typeStr = uint32ToString(info.dataType)
-        var bytes: [UInt8] = []
-        
-        if typeStr == "flt " {
-            var f = Float32(rpm)
-            guard f.isFinite else { return false }
-            bytes = withUnsafeBytes(of: &f) { Array($0) }
-        } else if typeStr == "fpe2" {
-            guard rpm <= Double(UInt16.max) / 4.0,
-                  let intVal = UInt16(exactly: Int(rpm * 4.0)) else {
-                return false
-            }
-            bytes = [UInt8(intVal >> 8), UInt8(intVal & 0xFF)]
-        } else if typeStr == "ui16" {
-            guard rpm <= Double(UInt16.max),
-                  let intVal = UInt16(exactly: Int(rpm)) else {
-                return false
-            }
-            bytes = [UInt8(intVal >> 8), UInt8(intVal & 0xFF)]
-        } else {
-            return false
-        }
-        
-        return writeValue(key: key, bytes: bytes)
     }
     
     public func readTemperature(key: String) -> Double? {

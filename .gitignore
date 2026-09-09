@@ -75,3 +75,8 @@ App-Specific Passwords.md
 *.dmg
 fastlane/report.xml
 fastlane/test_output/
+
+# Fastlane & submission scripts
+fastlane/
+submit_to_appstore.py
+ExportOptions_AppStore.plist

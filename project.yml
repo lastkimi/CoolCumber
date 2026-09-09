@@ -3,29 +3,67 @@ options:
   bundleIdPrefix: com.slmcamp
   deploymentTarget:
     macOS: "13.0"
+configs:
+  Debug: debug
+  Beta: release
+  Release: release
+settings:
+  base:
+    MARKETING_VERSION: "1.2.0"
+    CURRENT_PROJECT_VERSION: "3"
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: BSKR6CQ765
+    CODE_SIGN_STYLE: Automatic
+  configs:
+    Beta:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) BETA
+packages:
+  ThermFlowCore:
+    path: Packages/ThermFlowCore
 targets:
   ThermFlowApp:
     type: application
     platform: macOS
     sources:
-      - ThermFlowApp/Sources
+      - path: ThermFlowApp/Sources
+        excludes:
+          - AI
+          - DashboardView.swift
+          - DesignSystem.swift
+          - DiagnosticEngine.swift
+          - FanEngine.swift
+          - RogueEradicatorEngine.swift
+          - SettingsView.swift
+          - SweeperEngine.swift
+          - SystemOptimizerView.swift
+          - ThermalPowerView.swift
+          - UIComponents.swift
+          - UpdateManager.swift
+      - ThermFlowApp/Resources
       - ThermFlowApp/Assets.xcassets
     settings:
-      PRODUCT_NAME: CoolCumber
-      PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber
-      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      base:
+        PRODUCT_NAME: CoolCumber
+        PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: ThermFlowApp/Direct.entitlements
+      configs:
+        Beta:
+          INFOPLIST_KEY_CoolCumberBetaStartsAt: "2026-08-20T00:00:00Z"
+          INFOPLIST_KEY_CoolCumberBetaExpiresAt: "2026-09-30T00:00:00Z"
     info:
       path: ThermFlowApp/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleIconName: AppIcon
-        NSHumanReadableCopyright: "Copyright © 2026 CoolCumber. All rights reserved."
+        NSHumanReadableCopyright: "Copyright © 2026 Hangzhou Inkblaze AI Technology Co., Ltd. All rights reserved."
         LSUIElement: true # Menu bar app
         LSApplicationCategoryType: "public.app-category.utilities"
-        CFBundleURLTypes:
-          - CFBundleURLName: "com.slmcamp.url"
-            CFBundleURLSchemes:
-              - coolcumber
+        ITSAppUsesNonExemptEncryption: false
     dependencies:
+      - package: ThermFlowCore
       - target: ThermFlowDaemon
         embed: false
       - target: ThermFlowWidget
@@ -33,62 +71,110 @@ targets:
     postBuildScripts:
       - script: |
           mkdir -p "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchServices"
-          cp -f "${BUILT_PRODUCTS_DIR}/com.coolcumber.helper" "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchServices/com.coolcumber.helper"
+          cp -f "${BUILT_PRODUCTS_DIR}/com.slmcamp.CoolCumber.helper.v2" "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchServices/com.slmcamp.CoolCumber.helper.v2"
           mkdir -p "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons"
-          cp -f "${SRCROOT}/ThermFlowDaemon/LaunchDaemon.plist" "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons/com.coolcumber.helper.plist"
-          cp -f "${SRCROOT}/ThermFlowDaemon/LaunchDaemon-Fallback.plist" "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons/com.coolcumber.helper-fallback.plist"
+          cp -f "${SRCROOT}/ThermFlowDaemon/LaunchDaemon.plist" "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons/com.slmcamp.CoolCumber.helper.v2.plist"
+          # This inert descriptor exists only so SMAppService can retire an
+          # enabled pre-v2 job. Registering v2 still requires user approval.
+          cp -f "${SRCROOT}/ThermFlowDaemon/LegacyLaunchDaemon.plist" "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons/com.coolcumber.helper.plist"
         name: Embed Daemon
+      - script: |
+          if [[ "${CONFIGURATION}" == "Beta" ]]; then
+            app_info_plist="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
+            /usr/libexec/PlistBuddy -c "Delete :CoolCumberBetaStartsAt" "${app_info_plist}" >/dev/null 2>&1 || true
+            /usr/libexec/PlistBuddy -c "Delete :CoolCumberBetaExpiresAt" "${app_info_plist}" >/dev/null 2>&1 || true
+            /usr/libexec/PlistBuddy -c "Add :CoolCumberBetaStartsAt string ${INFOPLIST_KEY_CoolCumberBetaStartsAt}" "${app_info_plist}"
+            /usr/libexec/PlistBuddy -c "Add :CoolCumberBetaExpiresAt string ${INFOPLIST_KEY_CoolCumberBetaExpiresAt}" "${app_info_plist}"
+          fi
+        name: Inject Beta Access Window
 
   ThermFlowAppStore:
     type: application
     platform: macOS
+    scheme:
+      storeKitConfiguration: ThermFlowApp/StoreKitTesting/CoolCumber.storekit
     sources:
-      - ThermFlowApp/Sources
+      - path: ThermFlowApp/Sources
+        excludes:
+          - AI
+          - DashboardView.swift
+          - DesignSystem.swift
+          - DiagnosticEngine.swift
+          - FanEngine.swift
+          - RogueEradicatorEngine.swift
+          - SettingsView.swift
+          - SweeperEngine.swift
+          - SystemOptimizerView.swift
+          - ThermalPowerView.swift
+          - UIComponents.swift
+          - UpdateManager.swift
+      - ThermFlowApp/Resources
       - ThermFlowApp/Assets.xcassets
     settings:
-      PRODUCT_NAME: CoolCumber Lite
-      PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber
-      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-      SWIFT_ACTIVE_COMPILATION_CONDITIONS: APPSTORE
-      ENABLE_APP_SANDBOX: YES
-      CODE_SIGN_ENTITLEMENTS: ThermFlowApp/AppStore.entitlements
-      MARKETING_VERSION: "1.0.1"
-      CURRENT_PROJECT_VERSION: "2"
+      base:
+        PRODUCT_NAME: CoolCumber
+        PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) APPSTORE
+        ENABLE_APP_SANDBOX: YES
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: ThermFlowApp/AppStore.entitlements
+      configs:
+        Beta:
+          INFOPLIST_KEY_CoolCumberBetaStartsAt: "2026-08-20T00:00:00Z"
+          INFOPLIST_KEY_CoolCumberBetaExpiresAt: "2026-09-30T00:00:00Z"
     info:
       path: ThermFlowApp/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleIconName: AppIcon
-        NSHumanReadableCopyright: "Copyright © 2026 CoolCumber. All rights reserved."
+        NSHumanReadableCopyright: "Copyright © 2026 Hangzhou Inkblaze AI Technology Co., Ltd. All rights reserved."
         LSUIElement: true # Menu bar app
         LSApplicationCategoryType: "public.app-category.utilities"
-        CFBundleURLTypes:
-          - CFBundleURLName: "com.slmcamp.url"
-            CFBundleURLSchemes:
-              - coolcumber
+        ITSAppUsesNonExemptEncryption: false
     dependencies:
+      - package: ThermFlowCore
       - target: ThermFlowWidget
         embed: true
+    postBuildScripts:
+      - script: |
+          if [[ "${CONFIGURATION}" == "Beta" ]]; then
+            app_info_plist="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
+            /usr/libexec/PlistBuddy -c "Delete :CoolCumberBetaStartsAt" "${app_info_plist}" >/dev/null 2>&1 || true
+            /usr/libexec/PlistBuddy -c "Delete :CoolCumberBetaExpiresAt" "${app_info_plist}" >/dev/null 2>&1 || true
+            /usr/libexec/PlistBuddy -c "Add :CoolCumberBetaStartsAt string ${INFOPLIST_KEY_CoolCumberBetaStartsAt}" "${app_info_plist}"
+            /usr/libexec/PlistBuddy -c "Add :CoolCumberBetaExpiresAt string ${INFOPLIST_KEY_CoolCumberBetaExpiresAt}" "${app_info_plist}"
+          fi
+        name: Inject Beta Access Window
 
   ThermFlowDaemon:
     type: tool
     platform: macOS
-    sources: [ThermFlowDaemon/Sources]
+    sources:
+      - path: ThermFlowDaemon/Sources
+        excludes:
+          - Utilities
     info:
       path: ThermFlowDaemon/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
     settings:
-      CODE_SIGN_IDENTITY: "-"
-      ENABLE_HARDENED_RUNTIME: NO
+      ENABLE_HARDENED_RUNTIME: YES
       CREATE_INFOPLIST_SECTION_IN_BINARY: YES
-      PRODUCT_BUNDLE_IDENTIFIER: com.coolcumber.helper
-      PRODUCT_NAME: com.coolcumber.helper
+      PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber.helper.v2
+      PRODUCT_NAME: com.slmcamp.CoolCumber.helper.v2
 
   ThermFlowWidget:
     type: app-extension
     platform: macOS
-    sources: [ThermFlowWidget/Sources]
+    sources: [ThermFlowWidget/Sources, ThermFlowWidget/Resources]
     info:
       path: ThermFlowWidget/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: "CoolCumber Widget"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
@@ -96,7 +182,8 @@ targets:
       PRODUCT_NAME: CoolCumberWidget
       PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber.CoolCumberWidget
       ENABLE_APP_SANDBOX: YES
+      ENABLE_HARDENED_RUNTIME: YES
       CODE_SIGN_ENTITLEMENTS: ThermFlowWidget/Widget.entitlements
-      MARKETING_VERSION: "1.0.1"
-      CURRENT_PROJECT_VERSION: "2"
       SKIP_INSTALL: YES
+    dependencies:
+      - package: ThermFlowCore

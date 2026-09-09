@@ -40,9 +40,13 @@ jobs:
         run: swift test --package-path Packages/ThermFlowCore
 
   unsigned-builds:
-    name: Direct and Mac App Store unsigned builds
+    name: Unsigned ${{ matrix.configuration }} / both channels
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Beta, Release]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -55,4 +59,7 @@ jobs:
           xcodebuild -version
           xcodegen --version
       - name: Generate project and build both channels
-        run: Scripts/build-unsigned.sh "${RUNNER_TEMP}/coolcumber-derived-data"
+        run: >-
+          Scripts/build-unsigned.sh
+          --derived-data "${RUNNER_TEMP}/coolcumber-${{ matrix.configuration }}"
+          --configuration "${{ matrix.configuration }}"
