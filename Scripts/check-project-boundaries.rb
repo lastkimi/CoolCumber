@@ -116,6 +116,7 @@ unless setting.call(widget, "CODE_SIGN_ENTITLEMENTS") == "$(COOLCUMBER_WIDGET_EN
 end
 failures << "Widget target must enable Hardened Runtime" unless enabled.call(setting.call(widget, "ENABLE_HARDENED_RUNTIME"))
 failures << "Privileged helper must enable Hardened Runtime" unless enabled.call(setting.call(daemon, "ENABLE_HARDENED_RUNTIME"))
+failures << "Privileged helper must be embedded only, not installed as a separate archive product" unless enabled.call(setting.call(daemon, "SKIP_INSTALL"))
 
 {
   "Direct app" => direct,

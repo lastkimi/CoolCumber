@@ -230,8 +230,11 @@ if [ -e "$output_dir" ]; then
     fi
     existing_output="$(find "$output_dir" -mindepth 1 -maxdepth 1 -print -quit)"
     if [ -n "$existing_output" ]; then
-        printf 'Output directory must be empty: %s\n' "$output_dir" >&2
-        exit 1
+        if [ ! -d "$output_dir/DerivedData" ] || [ -L "$output_dir/DerivedData" ] ||
+           [ -n "$(find "$output_dir" -mindepth 1 -maxdepth 1 ! -name DerivedData -print -quit)" ]; then
+            printf 'Output directory must be empty or contain only an interrupted build cache: %s\n' "$output_dir" >&2
+            exit 1
+        fi
     fi
 else
     mkdir -p "$output_dir"

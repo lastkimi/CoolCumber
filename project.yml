@@ -167,6 +167,7 @@ targets:
       CREATE_INFOPLIST_SECTION_IN_BINARY: YES
       PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber.helper.v2
       PRODUCT_NAME: com.slmcamp.CoolCumber.helper.v2
+      SKIP_INSTALL: YES
 
   CoolCumberUITests:
     type: bundle.ui-testing
