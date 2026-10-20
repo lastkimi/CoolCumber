@@ -410,7 +410,9 @@ build_configuration="$channel"
 build_settings=(
     "DEVELOPMENT_TEAM=$team_id"
     'CODE_SIGN_STYLE=Automatic'
-    "CODE_SIGN_IDENTITY=$DIRECT_APP_SIGNING_IDENTITY"
+    # Automatic archives use development signing. The Developer ID export
+    # below re-signs app, Widget and helper before any notarization or upload.
+    'CODE_SIGN_IDENTITY=Apple Development'
     "MARKETING_VERSION=$version"
     "CURRENT_PROJECT_VERSION=$build_number"
 )

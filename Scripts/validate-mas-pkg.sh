@@ -15,6 +15,9 @@ Usage:
     --build 4 \
     --team-id TEAM_ID
 
+For an intermediate Xcode automatically signed archive only, --app may also
+use --allow-development-archive. Package validation never accepts that option.
+
 This command is read-only with respect to the package. It expands a temporary
 copy and validates the exact payload that would be uploaded.
 
@@ -31,6 +34,7 @@ app_input=""
 expected_version=""
 expected_build=""
 team_id=""
+allow_development_archive=0
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -53,6 +57,10 @@ while [ "$#" -gt 0 ]; do
         --team-id)
             team_id="${2:-}"
             shift 2
+            ;;
+        --allow-development-archive)
+            allow_development_archive=1
+            shift
             ;;
         -h|--help)
             usage
@@ -82,6 +90,10 @@ require_value '--team-id' "$team_id"
 if { [ -z "$pkg_path" ] && [ -z "$app_input" ]; } ||
    { [ -n "$pkg_path" ] && [ -n "$app_input" ]; }; then
     printf '%s\n' 'Provide exactly one of --pkg or --app.' >&2
+    exit 64
+fi
+if [ "$allow_development_archive" -eq 1 ] && [ -n "$pkg_path" ]; then
+    printf '%s\n' '--allow-development-archive is restricted to intermediate --app validation.' >&2
     exit 64
 fi
 if [ -n "$pkg_path" ]; then
@@ -192,6 +204,10 @@ assert_mas_signature() {
     fi
     if ! grep -F -q 'Authority=Apple Distribution:' <<< "$signature_details" &&
        ! grep -F -q 'Authority=3rd Party Mac Developer Application:' <<< "$signature_details"; then
+        if [ "$allow_development_archive" -eq 1 ] &&
+           grep -F -q 'Authority=Apple Development:' <<< "$signature_details"; then
+            return
+        fi
         printf '%s is not signed with an App Store distribution identity.\n' "$label" >&2
         exit 1
     fi
@@ -232,7 +248,8 @@ assert_signed_entitlements() {
     extract_entitlements "$signed_path" "$entitlements"
     sandbox_value="$(plist_value "$entitlements" com.apple.security.app-sandbox)"
     assert_equal "$sandbox_value" 'true' "$label app sandbox entitlement"
-    if [ "$(plist_value "$entitlements" com.apple.security.get-task-allow 2> /dev/null || true)" = 'true' ]; then
+    if [ "$allow_development_archive" -eq 0 ] &&
+       [ "$(plist_value "$entitlements" com.apple.security.get-task-allow 2> /dev/null || true)" = 'true' ]; then
         printf '%s must not contain get-task-allow.\n' "$label" >&2
         exit 1
     fi

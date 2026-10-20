@@ -284,6 +284,7 @@ if [ -n "$upload_archive" ]; then
     archived_app="$archive_path/Products/Applications/$RELEASE_PRODUCT_NAME.app"
     "$script_directory/validate-mas-pkg.sh" \
         --app "$archived_app" \
+        --allow-development-archive \
         --version "$version" \
         --build "$build_number" \
         --team-id "$team_id"
@@ -367,7 +368,9 @@ manifest_path="$output_dir/release-manifest.json"
 build_settings=(
     "DEVELOPMENT_TEAM=$team_id"
     'CODE_SIGN_STYLE=Automatic'
-    "CODE_SIGN_IDENTITY=$MAS_APP_SIGNING_IDENTITY"
+    # Xcode automatic archives use development signing. Export re-signs the
+    # reviewed package for distribution; the package gate stays strict.
+    'CODE_SIGN_IDENTITY=Apple Development'
     "MARKETING_VERSION=$version"
     "CURRENT_PROJECT_VERSION=$build_number"
 )
@@ -386,6 +389,7 @@ xcodebuild \
 archived_app="$archive_path/Products/Applications/$RELEASE_PRODUCT_NAME.app"
 "$script_directory/validate-mas-pkg.sh" \
     --app "$archived_app" \
+    --allow-development-archive \
     --version "$version" \
     --build "$build_number" \
     --team-id "$team_id"
@@ -394,6 +398,7 @@ plutil -create xml1 "$export_options"
 plutil -insert method -string app-store-connect "$export_options"
 plutil -insert destination -string export "$export_options"
 plutil -insert signingStyle -string automatic "$export_options"
+plutil -insert signingCertificate -string "$MAS_APP_SIGNING_IDENTITY" "$export_options"
 plutil -insert teamID -string "$team_id" "$export_options"
 plutil -insert stripSwiftSymbols -bool true "$export_options"
 plutil -insert uploadSymbols -bool true "$export_options"
@@ -436,6 +441,7 @@ fi
 sealed_archive="$(sed -n '1p' "$sealed_archives_file")"
 "$script_directory/validate-mas-pkg.sh" \
     --app "$sealed_archive/Products/Applications/$RELEASE_PRODUCT_NAME.app" \
+    --allow-development-archive \
     --version "$version" \
     --build "$build_number" \
     --team-id "$team_id"
