@@ -493,7 +493,9 @@ preflight_args=(
 if [ -n "$mas_installer" ]; then
     preflight_args+=(--mas-installer "$mas_installer")
 fi
-preflight_args+=("${preflight_notary_args[@]}")
+if [ "${#preflight_notary_args[@]}" -gt 0 ]; then
+    preflight_args+=("${preflight_notary_args[@]}")
+fi
 "$repo_root/Scripts/release-preflight.sh" "${preflight_args[@]}"
 
 submit_and_require_accepted() {
