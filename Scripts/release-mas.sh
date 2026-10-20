@@ -165,6 +165,7 @@ validate_asc_key() {
 validate_output_directory() {
     local candidate="$1"
     local require_empty="$2"
+    local allow_build_cache="${3:-0}"
 
     candidate="$(absolute_from_invocation "$candidate")"
     if [ "$candidate" = '/' ] || [ "$candidate" = "${HOME:-}" ]; then
@@ -182,8 +183,16 @@ validate_output_directory() {
         fi
         if [ "$require_empty" -eq 1 ] &&
            [ -n "$(find "$candidate" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
-            printf 'Output directory must be empty: %s\n' "$candidate" >&2
-            exit 1
+            # An interrupted build may leave only Xcode's replaceable cache.
+            # Never reuse a directory containing an archive, package, manifest,
+            # upload receipt, or any other artifact. Upload mode stays empty-only.
+            if [ "$allow_build_cache" -ne 1 ] ||
+               [ ! -d "$candidate/DerivedData" ] ||
+               [ -L "$candidate/DerivedData" ] ||
+               [ -n "$(find "$candidate" -mindepth 1 -maxdepth 1 ! -name DerivedData -print -quit)" ]; then
+                printf 'Output directory must be empty or contain only an interrupted build cache: %s\n' "$candidate" >&2
+                exit 1
+            fi
         fi
     else
         mkdir -p "$candidate"
@@ -355,7 +364,7 @@ if ! security find-identity -v -p codesigning | grep -F -q "$MAS_APP_SIGNING_IDE
     exit 1
 fi
 
-output_dir="$(validate_output_directory "$output_dir" 1)"
+output_dir="$(validate_output_directory "$output_dir" 1 1)"
 "$script_directory/check-project-boundaries.rb" "$repo_root/project.yml" "$version" "$build_number"
 xcodegen generate --spec "$repo_root/project.yml"
 

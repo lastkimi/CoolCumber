@@ -10,18 +10,25 @@ final class BetaAccessSmokeTests: XCTestCase {
     }
 
     func testBetaPaywallShowsTemporaryAccessWithoutPurchaseOrRestore() {
-        let app = launch(destination: "--open-pro")
+        let app = launch(destination: "--open-main-window")
         defer { app.terminate() }
+        let proEntry = app.buttons.matching(NSPredicate(
+            format: "label == 'Pro active' OR label == 'Pro 已启用' OR label == 'View Pro' OR label == '了解 Pro'"
+        )).firstMatch
+        XCTAssertTrue(proEntry.waitForExistence(timeout: 20))
+        proEntry.click()
+        XCTAssertTrue(app.staticTexts["coolcumber.paywall.title"].waitForExistence(timeout: 20))
+        attach(window: app.windows.firstMatch, name: "Beta payment-page entry")
 
-        let access = element(
-            matching: "label == 'Current access: Beta Preview' OR label == '当前权益：免费 Beta'",
-            in: app
-        )
-        XCTAssertTrue(access.waitForExistence(timeout: 20))
-        let explanation = element(
-            matching: "label CONTAINS 'It is not a purchase' OR value CONTAINS 'It is not a purchase' OR label CONTAINS '这不是购买' OR value CONTAINS '这不是购买'",
-            in: app
-        )
+        let access = app.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS 'Beta Preview' OR value CONTAINS 'Beta Preview' OR label CONTAINS '免费 Beta' OR value CONTAINS '免费 Beta'"
+        )).firstMatch
+        let hasBetaAccess = access.waitForExistence(timeout: 20)
+        if !hasBetaAccess { print(app.debugDescription) }
+        XCTAssertTrue(hasBetaAccess)
+        let explanation = app.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS 'not a purchase' OR value CONTAINS 'not a purchase' OR label CONTAINS '这不是购买' OR value CONTAINS '这不是购买'"
+        )).firstMatch
         XCTAssertTrue(explanation.waitForExistence(timeout: 20))
         XCTAssertFalse(element(
             matching: "label BEGINSWITH 'Unlock Pro —' OR label BEGINSWITH '解锁 Pro —'",

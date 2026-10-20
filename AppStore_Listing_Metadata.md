@@ -187,6 +187,24 @@ Build-4 Beta access temporarily unlocks eligible Pro features for evaluation.
 It disables purchase and restore, creates no receipt or permanent entitlement,
 and must not be attached to the paid App Store submission.
 
+### Beta completion gates
+
+The paid build may proceed only when provider records and actual tester
+feedback establish all of the following:
+
+- At least five distinct external testers and twenty real test sessions.
+- At least one Intel Mac and one Apple silicon Mac represented in the test
+  evidence; record the tested macOS versions as well.
+- At least 72 hours of observation after the first external installation.
+- No unresolved P0 or P1 defect, including launch/signature failures, misleading
+  sensor values, privacy regressions, history loss, or incorrect paid access.
+- Feedback covers menu-bar entry, window reopening, missing/stale readings,
+  local history, export, Widget freshness, and the temporary Beta boundary.
+
+Local UI automation and StoreKit fixtures do not count as external testers,
+sessions, installations, or revenue. If the sample is insufficient, keep the
+Beta stage open; do not convert an empty feedback queue into a passing result.
+
 ## Limited Beta review notes — build 4
 
 ```text
