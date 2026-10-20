@@ -41,11 +41,12 @@ Preview builds temporarily unlock eligible Pro features without creating a
 purchase or permanent license. Both preview channels carry a fixed access window of
 no more than 45 days and fail closed to Free after it expires.
 
-The release sequence is intentionally separated: version 1.2.0 build 4 is only
-the small, free Beta candidate. It is not the paid production upload. After the
-Beta and its feedback are complete, the US$19.99 Pro submission will use a
-unique higher build number (currently planned as build 5) and fresh release
-evidence.
+Version 1.2.0 build 4 is the free TestFlight Beta, not the paid production
+upload. Build 5 is the formal-release candidate for the US$19.99 Pro launch.
+On 20 October 2026 the owner explicitly chose a direct launch without an
+external-Beta-feedback prerequisite. Safety checks, automated tests, signed
+artifacts, purchase validation, Apple review and account requirements remain
+release gates. Candidate or uploaded status does not mean publicly available.
 
 ## Privacy and security
 
@@ -76,7 +77,7 @@ checked-in release gates before producing distribution artifacts:
 
 ```bash
 Scripts/ci-secret-scan.sh
-Scripts/check-project-boundaries.rb project.yml 1.2.0 4
+Scripts/check-project-boundaries.rb project.yml 1.2.0 5
 ```
 
 ## License

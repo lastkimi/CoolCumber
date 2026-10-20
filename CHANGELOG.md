@@ -1,11 +1,25 @@
 # Changelog
 
+## 1.2.0 Build 5 — Production candidate — 2026-10-20
+
+- The owner explicitly chose direct production launch without waiting for
+  external Beta feedback. Tester-count, session-count and observation-duration
+  gates are removed; no external test feedback or production purchase is
+  claimed by this decision.
+- Build 5 uses Release configuration, not the temporary Beta entitlement.
+  Mac App Store Pro remains a verified one-time non-consumable purchase with
+  Restore, planned at US$19.99. Direct remains Free with checkout disabled.
+- Added optimized-release visible-window validation and presentation-only
+  language/appearance launch options, with no fake telemetry or paid access.
+- Signed builds, automated tests, truthful release assets, store review and
+  account eligibility remain mandatory before public paid availability.
+
 ## 1.2.0 Build 4 — Limited Beta candidate — 2026-10-20
 
 Build 4 is reserved for a small, free Beta. It is not the paid production
-upload and must not be attached to the US$19.99 Pro App Store submission. After
-the Beta and its feedback are complete, the paid release will use a unique
-higher build number, currently planned as build 5.
+upload and must not be attached to the US$19.99 Pro App Store submission. The
+paid release uses a unique higher build number, starting with build 5. The
+subsequent direct-launch decision is recorded above.
 
 - Removed the optional notch SmartBar surface and its externally inspired
   detection routine. That historical routine followed display-cutout ideas from

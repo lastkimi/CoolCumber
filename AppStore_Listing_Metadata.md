@@ -1,11 +1,12 @@
 # CoolCumber 1.2 — App Store Connect metadata
 
-This file records the two-stage release plan for the sandboxed Mac App Store
-product. Version 1.2.0 build 4 is reserved for a small, free TestFlight Beta; it
-is not the paid production upload. The US$19.99 Pro submission is pending the
-Beta and its feedback and will use a unique higher build number, currently
-planned as build 5. Any build-5 status, screenshots, checksums, and validation
-results remain pending until that exact candidate exists.
+This file records release identities for the sandboxed Mac App Store product.
+Version 1.2.0 build 4 is reserved for the free TestFlight Beta; it is not the
+paid production upload. On 20 October 2026 the owner explicitly instructed a
+direct production and US$19.99 Pro launch without waiting for external Beta
+feedback. Build 5 is the formal Release candidate. Its archive, screenshots,
+checksums and provider status must be recorded from that exact candidate;
+this document alone is not evidence of public availability.
 
 ## App information
 
@@ -16,7 +17,7 @@ results remain pending until that exact candidate exists.
 - Primary category: Utilities
 - Version: `1.2.0`
 - Limited free Beta build: `4`
-- Planned paid production build: `5` (pending; not yet built or submitted)
+- Formal production candidate build: `5` (provider status is recorded separately)
 - Copyright: `© 2026 Hangzhou Inkblaze AI Technology Co., Ltd.`
 - Beta price: Free; Beta access is temporary and creates no purchase
 - Planned production price: Free with In-App Purchase
@@ -146,9 +147,10 @@ CoolCumber 是一款安静、本地优先，并以数据可信为核心的 Mac �
 
 No external TestFlight beta was conducted for build 3: the app had zero beta
 groups and zero testers, so there is no external beta-user feedback to cite.
-Build 4 is the proposed next limited-Beta candidate. The plan below must not be
-described as completed testing until App Store Connect records the group,
-testers, distribution, and resulting feedback.
+Build 4 was uploaded and separately submitted for TestFlight Beta review on
+20 October 2026. The owner subsequently chose direct production launch; no
+external testers, sessions or feedback are claimed. The historical limited
+Beta plan below is not a prerequisite for production release.
 
 ### Proposed limited TestFlight Beta
 
@@ -187,23 +189,25 @@ Build-4 Beta access temporarily unlocks eligible Pro features for evaluation.
 It disables purchase and restore, creates no receipt or permanent entitlement,
 and must not be attached to the paid App Store submission.
 
-### Beta completion gates
+### Direct-launch decision and remaining release gates
 
-The paid build may proceed only when provider records and actual tester
-feedback establish all of the following:
+The owner explicitly removed external-feedback, tester-count, session-count
+and observation-duration prerequisites on 20 October 2026. Production need
+not wait for the build-4 TestFlight review or an external test cohort.
 
-- At least five distinct external testers and twenty real test sessions.
-- At least one Intel Mac and one Apple silicon Mac represented in the test
-  evidence; record the tested macOS versions as well.
-- At least 72 hours of observation after the first external installation.
 - No unresolved P0 or P1 defect, including launch/signature failures, misleading
-  sensor values, privacy regressions, history loss, or incorrect paid access.
-- Feedback covers menu-bar entry, window reopening, missing/stale readings,
-  local history, export, Widget freshness, and the temporary Beta boundary.
+  sensor values, privacy regressions, history loss or incorrect paid access.
+- Deterministic data/commerce tests, real visible-window checks and universal
+  Intel/Apple-silicon builds must pass with source and result evidence.
+- The exact Release candidate must be signed and validated; Direct must also
+  be notarized. The paid build must not contain Beta access or StoreKit fixtures.
+- Store metadata, real screenshots, non-consumable price, purchase/restore and
+  first-IAP review association must be checked without fabricated transactions.
+- Apple approval and account eligibility remain required for paid availability.
 
-Local UI automation and StoreKit fixtures do not count as external testers,
-sessions, installations, or revenue. If the sample is insufficient, keep the
-Beta stage open; do not convert an empty feedback queue into a passing result.
+Local automation and StoreKit fixtures are internal validation, not external
+testers, installations or revenue. No production purchase can be claimed until
+one is observed; the owner decision does not waive platform requirements.
 
 ## Limited Beta review notes — build 4
 
@@ -222,7 +226,7 @@ Validation boundary: 103 deterministic ThermFlowCore tests passed. Build 3 had n
 ## Planned paid App Review notes — build 5 or later
 
 This is a template, not a claim about an existing binary. Replace the build
-number and validation evidence after the Beta, build bump, signed archive, and
+number and validation evidence after the build bump, signed archive, and
 fresh UI capture are complete.
 
 ```text

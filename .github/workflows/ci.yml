@@ -40,7 +40,7 @@ jobs:
         run: swift test --package-path Packages/ThermFlowCore
 
   app-test-bundles:
-    name: Compile Debug and Beta UI test bundles
+    name: Compile Debug, Beta and Release UI test bundles
     runs-on: macos-15
     timeout-minutes: 45
     steps:
@@ -70,6 +70,18 @@ jobs:
           -project MacThermFlow.xcodeproj
           -scheme CoolCumberBetaValidation
           -configuration Beta
+          -destination 'generic/platform=macOS'
+          -derivedDataPath "${RUNNER_TEMP}/coolcumber-test-bundles"
+          -jobs 1
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          COMPILER_INDEX_STORE_ENABLE=NO
+      - name: Compile production Release UI tests
+        run: >-
+          xcodebuild build-for-testing
+          -project MacThermFlow.xcodeproj
+          -scheme CoolCumberProductionValidation
+          -configuration Release
           -destination 'generic/platform=macOS'
           -derivedDataPath "${RUNNER_TEMP}/coolcumber-test-bundles"
           -jobs 1

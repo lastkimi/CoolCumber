@@ -10,12 +10,13 @@ configs:
 settings:
   base:
     MARKETING_VERSION: "1.2.0"
-    CURRENT_PROJECT_VERSION: "4"
+    CURRENT_PROJECT_VERSION: "5"
     SWIFT_VERSION: "5.9"
     DEVELOPMENT_TEAM: BSKR6CQ765
     CODE_SIGN_STYLE: Automatic
   configs:
     Beta:
+      CURRENT_PROJECT_VERSION: "4"
       SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) BETA
 packages:
   ThermFlowCore:
@@ -216,4 +217,11 @@ schemes:
         ThermFlowAppStore: all
     test:
       config: Beta
+      targets: [CoolCumberUITests]
+  CoolCumberProductionValidation:
+    build:
+      targets:
+        ThermFlowAppStore: all
+    test:
+      config: Release
       targets: [CoolCumberUITests]

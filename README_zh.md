@@ -21,7 +21,7 @@ Mac App Store 版严格运行在沙盒中，绝不安装特权辅助组件；在
 
 实时核心监测和 24 小时本地历史永久免费。CoolCumber Pro 计划首先以 Mac App Store 一次性非消耗型购买形式上线，基准价为 US$19.99（实际价格以当地 App Store 为准）。Pro 包含 30 天本地历史、热压力提醒和 CSV 导出。首轮正式收费只走 Mac App Store；在签名授权服务和公开验签密钥部署前，官网版结账保持关闭。免费 Beta Preview 会临时开放符合条件的 Pro 能力，但不会生成购买记录或永久授权；两个渠道预览版的固定有效期最长为 45 天，到期后自动回到 Free。
 
-发布时序严格分离：1.2.0 (4) 只用于小范围免费 Beta，不作为付费生产包上传。完成 Beta 与反馈处理后，US$19.99 Pro 将使用唯一的更高构建号（当前计划为 build 5），并重新生成对应的发布证据。
+1.2.0 (4) 是免费 TestFlight Beta，不作为正式收费生产包。build 5 是 US$19.99 Pro 的正式发布候选版。产品负责人已于 2026-10-20 明确决定直接上线，取消外部 Beta 反馈作为前置条件；安全检查、自动化测试、签名产物、购买验证、Apple 审核与账户条件仍须满足。候选版或上传成功不代表已公开上线。
 
 ## 隐私与安全
 
@@ -45,7 +45,7 @@ Scripts/build-unsigned.sh --configuration Debug
 
 ```bash
 Scripts/ci-secret-scan.sh
-Scripts/check-project-boundaries.rb project.yml 1.2.0 4
+Scripts/check-project-boundaries.rb project.yml 1.2.0 5
 ```
 
 ## 开源协议

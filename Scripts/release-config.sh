@@ -23,8 +23,9 @@ release_require_channel_build_sequence() {
     local build_number="$3"
 
     # Build 4 is reserved for the small, free Beta. It must never be uploaded
-    # as the production binary. After Beta feedback, the US$19.99 Pro
-    # submission starts at a unique, strictly higher build number.
+    # as the production binary. The US$19.99 Pro submission starts at a unique,
+    # strictly higher build number. External feedback is not a release gate
+    # under the owner's 2026-10-20 direct-launch instruction.
     if [ "$version" = "$RELEASE_SEQUENCE_VERSION" ]; then
         case "$configuration" in
             Beta)

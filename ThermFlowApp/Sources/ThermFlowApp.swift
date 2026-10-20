@@ -25,7 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
         let arguments = ProcessInfo.processInfo.arguments
-        #if DEBUG
+        // Presentation-only launch options are also available when capturing
+        // the exact optimized release. They never inject metrics or access.
         if arguments.contains("--ui-language-en") {
             LanguageManager.shared.setLanguage("en")
         } else if arguments.contains("--ui-language-zh") {
@@ -36,7 +37,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if arguments.contains("--ui-appearance-light") {
             NSApp.appearance = NSAppearance(named: .aqua)
         }
-        #endif
 
         // Monitoring starts with the menu-bar app so history and opt-in alerts
         // remain truthful even when no window has been opened. The collector is
