@@ -359,7 +359,8 @@ case "$MAS_APP_SIGNING_IDENTITY" in
         exit 64
         ;;
 esac
-if ! security find-identity -v -p codesigning | grep -F -q "$MAS_APP_SIGNING_IDENTITY"; then
+installed_signing_identities="$(security find-identity -v -p codesigning)"
+if ! grep -F -q "$MAS_APP_SIGNING_IDENTITY" <<< "$installed_signing_identities"; then
     printf '%s\n' 'The requested Mac App Store signing identity is not installed.' >&2
     exit 1
 fi

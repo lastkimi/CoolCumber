@@ -390,7 +390,8 @@ assert_provisioning_application_identifier() {
     fi
     plutil -lint "$decoded" > /dev/null
     profile_team="$(plist_value "$decoded" TeamIdentifier:0)"
-    actual_identifier="$(plist_value "$decoded" Entitlements:application-identifier)"
+    actual_identifier="$(plist_value "$decoded" Entitlements:com.apple.application-identifier 2> /dev/null ||
+        plist_value "$decoded" Entitlements:application-identifier)"
     if [ "$profile_team" != "$team_id" ] || [ "$actual_identifier" != "$team_id.$expected_identifier" ]; then
         printf '%s provisioning identity mismatch: expected %s.%s.\n' \
             "$label" "$team_id" "$expected_identifier" >&2

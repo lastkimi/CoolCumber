@@ -307,14 +307,23 @@ assert_provisioning_profile() {
     fi
     plutil -lint "$decoded_profile" > /dev/null
     profile_team="$(plist_value "$decoded_profile" TeamIdentifier:0)"
-    application_identifier="$(plist_value "$decoded_profile" Entitlements:application-identifier)"
+    application_identifier="$(plist_value "$decoded_profile" Entitlements:com.apple.application-identifier 2> /dev/null ||
+        plist_value "$decoded_profile" Entitlements:application-identifier)"
     assert_equal "$profile_team" "$team_id" "$label provisioning Team ID"
     assert_equal "$application_identifier" "$team_id.$expected_bundle_id" "$label provisioning application-identifier"
-    groups="$(plist_value "$decoded_profile" Entitlements:com.apple.security.application-groups)"
-    if ! grep -F -q "$RELEASE_APP_GROUP" <<< "$groups"; then
-        printf '%s provisioning profile does not contain the required App Group.\n' "$label" >&2
-        exit 1
-    fi
+    # Team-ID-prefixed macOS groups are authorized by the verified signing
+    # Team and need not appear in a profile. Signed entitlements above still
+    # must claim the exact group. iOS-style registered groups require a grant.
+    case "$RELEASE_APP_GROUP" in
+        "$team_id".*) ;;
+        *)
+            groups="$(plist_value "$decoded_profile" Entitlements:com.apple.security.application-groups)"
+            if ! grep -F -q "$RELEASE_APP_GROUP" <<< "$groups"; then
+                printf '%s profile does not authorize the registered App Group.\n' "$label" >&2
+                exit 1
+            fi
+            ;;
+    esac
 }
 
 assert_privacy_reason() {
@@ -444,7 +453,8 @@ if [ -e "$app_path/Contents/Library/LaunchServices/$RELEASE_HELPER_EXECUTABLE_NA
     printf '%s\n' 'Mac App Store package contains a prohibited privileged component.' >&2
     exit 1
 fi
-if strings "$app_path/Contents/MacOS/$app_executable" | grep -F -q "$RELEASE_HELPER_SERVICE_ID"; then
+strings "$app_path/Contents/MacOS/$app_executable" > "$work_dir/app-binary-strings.txt"
+if grep -F -q "$RELEASE_HELPER_SERVICE_ID" "$work_dir/app-binary-strings.txt"; then
     printf '%s\n' 'Mac App Store executable references the Direct-only helper service.' >&2
     exit 1
 fi
