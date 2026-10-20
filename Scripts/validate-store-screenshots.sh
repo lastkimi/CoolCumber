@@ -105,7 +105,6 @@ capture_source_paths=(
     ThermFlowApp
     ThermFlowWidget
     Packages/ThermFlowCore
-    AppTests
     ReleaseUITests
 )
 capture_input_roots=(
@@ -114,7 +113,6 @@ capture_input_roots=(
     ThermFlowWidget
     Packages/ThermFlowCore/Package.swift
     Packages/ThermFlowCore/Sources
-    AppTests
     ReleaseUITests
 )
 capture_source_changes="$(

@@ -25,17 +25,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
         let arguments = ProcessInfo.processInfo.arguments
-        let environment = ProcessInfo.processInfo.environment
-
-        // Hosted unit tests exercise each boundary explicitly. Starting live
-        // polling, StoreKit observation and App Group services before XCTest
-        // establishes its session can stall the macOS test host and also makes
-        // deterministic logic tests depend on this machine's services.
-        if environment["XCTestConfigurationFilePath"] != nil
-            || environment["XCTestBundlePath"] != nil {
-            return
-        }
-
         #if DEBUG
         if arguments.contains("--ui-language-en") {
             LanguageManager.shared.setLanguage("en")

@@ -58,6 +58,10 @@ final class BetaAccessSmokeTests: XCTestCase {
         app.launchArguments = ["--skip-welcome", destination]
         app.launch()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 20))
+        XCTAssertTrue(
+            app.statusItems["coolcumber.menuBar.primary"].waitForExistence(timeout: 20),
+            "The universal menu-bar entry point was not installed"
+        )
         return app
     }
 

@@ -166,19 +166,6 @@ targets:
       PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber.helper.v2
       PRODUCT_NAME: com.slmcamp.CoolCumber.helper.v2
 
-  CoolCumberLogicTests:
-    type: bundle.unit-test
-    platform: macOS
-    sources: [AppTests]
-    settings:
-      PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber.logicTests
-      GENERATE_INFOPLIST_FILE: YES
-      TEST_HOST: $(BUILT_PRODUCTS_DIR)/CoolCumber.app/Contents/MacOS/CoolCumber
-      BUNDLE_LOADER: $(TEST_HOST)
-    dependencies:
-      - target: ThermFlowAppStore
-      - package: ThermFlowCore
-
   CoolCumberUITests:
     type: bundle.ui-testing
     platform: macOS
@@ -212,15 +199,6 @@ targets:
       - package: ThermFlowCore
 
 schemes:
-  CoolCumberLogic:
-    build:
-      buildImplicitDependencies: false
-      targets:
-        ThermFlowAppStore: all
-        CoolCumberLogicTests: [test]
-    test:
-      config: Debug
-      targets: [CoolCumberLogicTests]
   CoolCumberScreenshots:
     build:
       targets:

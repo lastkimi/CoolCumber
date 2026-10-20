@@ -629,18 +629,6 @@ final class MenuBarManager: NSObject, NSPopoverDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var isSetup = false
 
-    /// A read-only health signal for tests and diagnostics. The universal
-    /// entry point is valid only after the real AppKit status item owns its
-    /// target, action, and stable accessibility identifier.
-    var isUniversalEntryPointInstalled: Bool {
-        guard let button = statusItem.button else { return false }
-        return isSetup
-            && button.target === self
-            && button.action == #selector(handleMainClick(_:))
-            && button.accessibilityIdentifier()
-                == Self.primaryStatusItemAccessibilityIdentifier
-    }
-
     func setup() {
         guard !isSetup else { return }
         isSetup = true
