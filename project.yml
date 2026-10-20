@@ -45,6 +45,7 @@ targets:
       base:
         PRODUCT_NAME: CoolCumber
         PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber
+        INFOPLIST_FILE: $(DERIVED_FILE_DIR)/CoolCumber-BuildInfo.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_ENTITLEMENTS: ThermFlowApp/Direct.entitlements
@@ -68,6 +69,16 @@ targets:
         embed: false
       - target: ThermFlowWidget
         embed: true
+    preBuildScripts:
+      - script: bash "${SRCROOT}/Scripts/generate-app-info.sh"
+        name: Generate App Info
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(SRCROOT)/ThermFlowApp/Info.plist
+          - $(SRCROOT)/Scripts/generate-app-info.sh
+          - $(SRCROOT)/Scripts/release-config.sh
+        outputFiles:
+          - $(DERIVED_FILE_DIR)/CoolCumber-BuildInfo.plist
     postBuildScripts:
       - script: |
           mkdir -p "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchServices"
@@ -78,17 +89,6 @@ targets:
           # enabled pre-v2 job. Registering v2 still requires user approval.
           cp -f "${SRCROOT}/ThermFlowDaemon/LegacyLaunchDaemon.plist" "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons/com.coolcumber.helper.plist"
         name: Embed Daemon
-      - script: |
-          if [[ "${CONFIGURATION}" == "Beta" ]]; then
-            app_info_plist="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
-            /usr/libexec/PlistBuddy -c "Delete :CoolCumberBetaStartsAt" "${app_info_plist}" >/dev/null 2>&1 || true
-            /usr/libexec/PlistBuddy -c "Delete :CoolCumberBetaExpiresAt" "${app_info_plist}" >/dev/null 2>&1 || true
-            /usr/libexec/PlistBuddy -c "Add :CoolCumberBetaStartsAt string ${INFOPLIST_KEY_CoolCumberBetaStartsAt}" "${app_info_plist}"
-            /usr/libexec/PlistBuddy -c "Add :CoolCumberBetaExpiresAt string ${INFOPLIST_KEY_CoolCumberBetaExpiresAt}" "${app_info_plist}"
-          fi
-        name: Inject Beta Access Window
-        inputFiles:
-          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
 
   ThermFlowAppStore:
     type: application
@@ -116,6 +116,7 @@ targets:
       base:
         PRODUCT_NAME: CoolCumber
         PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber
+        INFOPLIST_FILE: $(DERIVED_FILE_DIR)/CoolCumber-BuildInfo.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) APPSTORE
         ENABLE_APP_SANDBOX: YES
@@ -139,19 +140,16 @@ targets:
       - package: ThermFlowCore
       - target: ThermFlowWidget
         embed: true
-    postBuildScripts:
-      - script: |
-          if [[ "${CONFIGURATION}" == "Beta" ]]; then
-            app_info_plist="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
-            /usr/libexec/PlistBuddy -c "Delete :CoolCumberBetaStartsAt" "${app_info_plist}" >/dev/null 2>&1 || true
-            /usr/libexec/PlistBuddy -c "Delete :CoolCumberBetaExpiresAt" "${app_info_plist}" >/dev/null 2>&1 || true
-            /usr/libexec/PlistBuddy -c "Add :CoolCumberBetaStartsAt string ${INFOPLIST_KEY_CoolCumberBetaStartsAt}" "${app_info_plist}"
-            /usr/libexec/PlistBuddy -c "Add :CoolCumberBetaExpiresAt string ${INFOPLIST_KEY_CoolCumberBetaExpiresAt}" "${app_info_plist}"
-          fi
-        name: Inject Beta Access Window
+    preBuildScripts:
+      - script: bash "${SRCROOT}/Scripts/generate-app-info.sh"
+        name: Generate App Info
+        basedOnDependencyAnalysis: false
         inputFiles:
-          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
-
+          - $(SRCROOT)/ThermFlowApp/Info.plist
+          - $(SRCROOT)/Scripts/generate-app-info.sh
+          - $(SRCROOT)/Scripts/release-config.sh
+        outputFiles:
+          - $(DERIVED_FILE_DIR)/CoolCumber-BuildInfo.plist
   ThermFlowDaemon:
     type: tool
     platform: macOS

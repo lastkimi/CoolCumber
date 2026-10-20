@@ -102,6 +102,8 @@ fi
 # the committed tree named by baseCommit.
 capture_source_paths=(
     project.yml
+    Scripts/generate-app-info.sh
+    Scripts/release-config.sh
     ThermFlowApp
     ThermFlowWidget
     Packages/ThermFlowCore
@@ -109,6 +111,8 @@ capture_source_paths=(
 )
 capture_input_roots=(
     project.yml
+    Scripts/generate-app-info.sh
+    Scripts/release-config.sh
     ThermFlowApp
     ThermFlowWidget
     Packages/ThermFlowCore/Package.swift
