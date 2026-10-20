@@ -195,7 +195,8 @@ targets:
       PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber.CoolCumberWidget
       ENABLE_APP_SANDBOX: YES
       ENABLE_HARDENED_RUNTIME: YES
-      CODE_SIGN_ENTITLEMENTS: ThermFlowWidget/Widget.entitlements
+      COOLCUMBER_WIDGET_ENTITLEMENTS: ThermFlowWidget/Widget.entitlements
+      CODE_SIGN_ENTITLEMENTS: $(COOLCUMBER_WIDGET_ENTITLEMENTS)
       SKIP_INSTALL: YES
     dependencies:
       - package: ThermFlowCore

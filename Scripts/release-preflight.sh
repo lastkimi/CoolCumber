@@ -369,12 +369,18 @@ assert_provisioning_application_identifier() {
     local expected_identifier="$2"
     local label="$3"
     local stem="$4"
+    local allow_unprofiled_team_group="${5:-0}"
     local profile="$bundle/Contents/embedded.provisionprofile"
     local decoded="$work_dir/$stem-profile.plist"
     local actual_identifier
     local profile_team
 
     if [ ! -s "$profile" ]; then
+        # macOS permits Team-ID-prefixed App Groups without a provisioning
+        # profile. TestFlight is different and continues to require one.
+        if [ "$allow_unprofiled_team_group" -eq 1 ]; then
+            return
+        fi
         printf '%s is missing embedded.provisionprofile.\n' "$label" >&2
         exit 1
     fi
@@ -632,11 +638,11 @@ while IFS= read -r extension; do
     extension_index=$((extension_index + 1))
 done < "$mas_extensions"
 
-assert_provisioning_application_identifier "$direct_app" "$RELEASE_APP_BUNDLE_ID" 'Direct app' direct-app
+assert_provisioning_application_identifier "$direct_app" "$RELEASE_APP_BUNDLE_ID" 'Direct app' direct-app 1
 assert_provisioning_application_identifier "$mas_app" "$RELEASE_APP_BUNDLE_ID" 'Mac App Store app' mas-app
 direct_profile_index=0
 while IFS= read -r extension; do
-    assert_provisioning_application_identifier "$extension" "$RELEASE_WIDGET_BUNDLE_ID" 'Direct embedded extension' "direct-extension-$direct_profile_index"
+    assert_provisioning_application_identifier "$extension" "$RELEASE_WIDGET_BUNDLE_ID" 'Direct embedded extension' "direct-extension-$direct_profile_index" 1
     direct_profile_index=$((direct_profile_index + 1))
 done < "$direct_extensions"
 mas_profile_index=0

@@ -382,6 +382,7 @@ build_settings=(
     # Xcode automatic archives use development signing. Export re-signs the
     # reviewed package for distribution; the package gate stays strict.
     'CODE_SIGN_IDENTITY=Apple Development'
+    'COOLCUMBER_WIDGET_ENTITLEMENTS=ThermFlowWidget/AppStore.entitlements'
     "MARKETING_VERSION=$version"
     "CURRENT_PROJECT_VERSION=$build_number"
 )

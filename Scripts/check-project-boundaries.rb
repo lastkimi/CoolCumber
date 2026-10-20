@@ -110,7 +110,10 @@ failures << "Direct target must use ThermFlowApp/Direct.entitlements" unless set
 failures << "Mac App Store target must enable App Sandbox" unless enabled.call(setting.call(mas, "ENABLE_APP_SANDBOX"))
 failures << "Mac App Store target must use ThermFlowApp/AppStore.entitlements" unless setting.call(mas, "CODE_SIGN_ENTITLEMENTS") == "ThermFlowApp/AppStore.entitlements"
 failures << "Widget target must enable App Sandbox" unless enabled.call(setting.call(widget, "ENABLE_APP_SANDBOX"))
-failures << "Widget target must use ThermFlowWidget/Widget.entitlements" unless setting.call(widget, "CODE_SIGN_ENTITLEMENTS") == "ThermFlowWidget/Widget.entitlements"
+unless setting.call(widget, "CODE_SIGN_ENTITLEMENTS") == "$(COOLCUMBER_WIDGET_ENTITLEMENTS)" &&
+       setting.call(widget, "COOLCUMBER_WIDGET_ENTITLEMENTS") == "ThermFlowWidget/Widget.entitlements"
+  failures << "Widget target must use the explicit channel entitlement selector"
+end
 failures << "Widget target must enable Hardened Runtime" unless enabled.call(setting.call(widget, "ENABLE_HARDENED_RUNTIME"))
 failures << "Privileged helper must enable Hardened Runtime" unless enabled.call(setting.call(daemon, "ENABLE_HARDENED_RUNTIME"))
 
@@ -143,6 +146,12 @@ expected_app_group = "BSKR6CQ765.com.slmcamp.CoolCumber"
   unless File.file?(absolute_path) && File.read(absolute_path).include?(expected_app_group)
     failures << "#{entitlements_path} must declare #{expected_app_group}"
   end
+end
+widget_store_entitlements = File.join(File.dirname(File.expand_path(project_path)), "ThermFlowWidget/AppStore.entitlements")
+unless File.file?(widget_store_entitlements) &&
+       File.read(widget_store_entitlements).include?("com.apple.application-identifier") &&
+       File.read(widget_store_entitlements).include?(expected_app_group)
+  failures << "TestFlight Widget must declare its application identity and shared group"
 end
 
 project_directory = File.dirname(File.expand_path(project_path))
