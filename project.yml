@@ -10,7 +10,7 @@ configs:
 settings:
   base:
     MARKETING_VERSION: "1.2.0"
-    CURRENT_PROJECT_VERSION: "3"
+    CURRENT_PROJECT_VERSION: "4"
     SWIFT_VERSION: "5.9"
     DEVELOPMENT_TEAM: BSKR6CQ765
     CODE_SIGN_STYLE: Automatic
@@ -50,8 +50,8 @@ targets:
         CODE_SIGN_ENTITLEMENTS: ThermFlowApp/Direct.entitlements
       configs:
         Beta:
-          INFOPLIST_KEY_CoolCumberBetaStartsAt: "2026-08-20T00:00:00Z"
-          INFOPLIST_KEY_CoolCumberBetaExpiresAt: "2026-09-30T00:00:00Z"
+          INFOPLIST_KEY_CoolCumberBetaStartsAt: "2026-10-20T00:00:00Z"
+          INFOPLIST_KEY_CoolCumberBetaExpiresAt: "2026-12-04T00:00:00Z"
     info:
       path: ThermFlowApp/Info.plist
       properties:
@@ -121,8 +121,8 @@ targets:
         CODE_SIGN_ENTITLEMENTS: ThermFlowApp/AppStore.entitlements
       configs:
         Beta:
-          INFOPLIST_KEY_CoolCumberBetaStartsAt: "2026-08-20T00:00:00Z"
-          INFOPLIST_KEY_CoolCumberBetaExpiresAt: "2026-09-30T00:00:00Z"
+          INFOPLIST_KEY_CoolCumberBetaStartsAt: "2026-10-20T00:00:00Z"
+          INFOPLIST_KEY_CoolCumberBetaExpiresAt: "2026-12-04T00:00:00Z"
     info:
       path: ThermFlowApp/Info.plist
       properties:
@@ -166,6 +166,29 @@ targets:
       PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber.helper.v2
       PRODUCT_NAME: com.slmcamp.CoolCumber.helper.v2
 
+  CoolCumberLogicTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [AppTests]
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber.logicTests
+      GENERATE_INFOPLIST_FILE: YES
+      TEST_HOST: $(BUILT_PRODUCTS_DIR)/CoolCumber.app/Contents/MacOS/CoolCumber
+      BUNDLE_LOADER: $(TEST_HOST)
+    dependencies:
+      - target: ThermFlowAppStore
+      - package: ThermFlowCore
+
+  CoolCumberUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [ReleaseUITests]
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.slmcamp.CoolCumber.uiTests
+      GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: ThermFlowAppStore
+
   ThermFlowWidget:
     type: app-extension
     platform: macOS
@@ -187,3 +210,28 @@ targets:
       SKIP_INSTALL: YES
     dependencies:
       - package: ThermFlowCore
+
+schemes:
+  CoolCumberLogic:
+    build:
+      buildImplicitDependencies: false
+      targets:
+        ThermFlowAppStore: all
+        CoolCumberLogicTests: [test]
+    test:
+      config: Debug
+      targets: [CoolCumberLogicTests]
+  CoolCumberScreenshots:
+    build:
+      targets:
+        ThermFlowAppStore: all
+    test:
+      config: Debug
+      targets: [CoolCumberUITests]
+  CoolCumberBetaValidation:
+    build:
+      targets:
+        ThermFlowAppStore: all
+    test:
+      config: Beta
+      targets: [CoolCumberUITests]

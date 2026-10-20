@@ -48,6 +48,6 @@ Do not change similarly named third-party files. Restart the Mac, reopen
 CoolCumber, confirm that the warning is gone, and only then approve the new v2
 read-only helper if the extra hardware readings are wanted.
 
-Beta Preview access is not a permanent license. Direct Beta builds contain a
+Beta Preview access is not a permanent license. Both Beta channels contain a
 fixed preview window of at most 45 days and fail closed to Free if that window
 is absent, malformed, not yet active, or expired.

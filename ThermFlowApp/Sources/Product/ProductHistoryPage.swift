@@ -68,6 +68,8 @@ struct ProductHistoryPage: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("coolcumber.page.history.top")
     }
 
     private var accessCard: some View {
@@ -192,9 +194,7 @@ struct ProductHistoryPage: View {
                     .foregroundColor(.secondary)
                 }
 
-                Text(isChinese
-                     ? "App Store 与官网版都只依据 macOS 报告的新鲜严重/危急热压力。官网版若存在可信实测 CPU 温度，还会使用下面的阈值。"
-                     : "Both editions use only fresh serious or critical thermal pressure reported by macOS. Direct also uses the threshold below when a trusted measured CPU temperature exists.")
+                Text(alertDecisionDescription)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -272,9 +272,21 @@ struct ProductHistoryPage: View {
                             showPro()
                         }
                     } label: {
-                        Label(isChinese ? "导出 CSV…" : "Export CSV…", systemImage: "square.and.arrow.up")
+                        Label(
+                            data.canExport
+                                ? (isChinese ? "导出 CSV…" : "Export CSV…")
+                                : (isChinese ? "导出 CSV — Pro" : "Export CSV — Pro"),
+                            systemImage: data.canExport ? "square.and.arrow.up" : "lock.fill"
+                        )
                     }
-                    .disabled(filteredRecords.isEmpty)
+                    .buttonStyle(.bordered)
+                    .tint(data.canExport ? .accentColor : .secondary)
+                    .disabled(data.records.isEmpty)
+                    .accessibilityHint(
+                        data.canExport
+                            ? (isChinese ? "将本机现有历史导出为 CSV。" : "Exports the available on-device history as CSV.")
+                            : (isChinese ? "CSV 导出需要 Pro；激活此按钮会显示 Pro 信息。" : "CSV export requires Pro; activating this button opens Pro information.")
+                    )
 
                     Button(role: .destructive) {
                         showsDeleteConfirmation = true
@@ -309,6 +321,17 @@ struct ProductHistoryPage: View {
             .contains(selectedRange) ? selectedRange : .day
         let cutoff = Date().addingTimeInterval(-effectiveRange.duration)
         return data.records.filter { $0.capturedAt >= cutoff && $0.capturedAt <= Date() }
+    }
+
+    private var alertDecisionDescription: String {
+        if data.isDirectEdition {
+            return isChinese
+                ? "App Store 与官网版都只依据 macOS 报告的新鲜严重/危急热压力。官网版若存在可信实测 CPU 温度，还会使用下面的阈值。"
+                : "Both editions use only fresh serious or critical thermal pressure reported by macOS. Direct also uses the threshold below when a trusted measured CPU temperature exists."
+        }
+        return isChinese
+            ? "App Store 监测版只依据 macOS 报告的新鲜严重或危急热压力。"
+            : "App Store Monitor uses only fresh serious or critical thermal pressure reported by macOS."
     }
 
     private var chartPoints: [ProductHistoryPoint] {

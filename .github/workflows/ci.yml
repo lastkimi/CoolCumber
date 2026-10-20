@@ -39,6 +39,56 @@ jobs:
       - name: Run core unit tests
         run: swift test --package-path Packages/ThermFlowCore
 
+  app-test-bundles:
+    name: Compile hosted and UI test bundles
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate --spec project.yml
+      - name: Compile hosted logic tests
+        run: >-
+          xcodebuild build-for-testing
+          -project MacThermFlow.xcodeproj
+          -scheme CoolCumberLogic
+          -configuration Debug
+          -destination 'generic/platform=macOS'
+          -derivedDataPath "${RUNNER_TEMP}/coolcumber-test-bundles"
+          -jobs 1
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          COMPILER_INDEX_STORE_ENABLE=NO
+      - name: Compile visible-window UI tests
+        run: >-
+          xcodebuild build-for-testing
+          -project MacThermFlow.xcodeproj
+          -scheme CoolCumberScreenshots
+          -configuration Debug
+          -destination 'generic/platform=macOS'
+          -derivedDataPath "${RUNNER_TEMP}/coolcumber-test-bundles"
+          -jobs 1
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          COMPILER_INDEX_STORE_ENABLE=NO
+      - name: Compile optimized Beta access tests
+        run: >-
+          xcodebuild build-for-testing
+          -project MacThermFlow.xcodeproj
+          -scheme CoolCumberBetaValidation
+          -configuration Beta
+          -destination 'generic/platform=macOS'
+          -derivedDataPath "${RUNNER_TEMP}/coolcumber-test-bundles"
+          -jobs 1
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          COMPILER_INDEX_STORE_ENABLE=NO
+
   unsigned-builds:
     name: Unsigned ${{ matrix.configuration }} / both channels
     runs-on: macos-15

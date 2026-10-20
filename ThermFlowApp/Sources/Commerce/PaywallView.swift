@@ -16,7 +16,7 @@ struct PaywallView: View {
             Divider()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 16) {
                     accessCard
                     purchaseSection
                     benefitsSection
@@ -24,7 +24,7 @@ struct PaywallView: View {
                     trustFooter
                 }
                 .frame(maxWidth: 680, alignment: .leading)
-                .padding(24)
+                .padding(20)
             }
         }
         .frame(minWidth: 540, idealWidth: 680, minHeight: 620, idealHeight: 720)
@@ -43,6 +43,7 @@ struct PaywallView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("CoolCumber")
                     .font(.title2.weight(.semibold))
+                    .accessibilityIdentifier("coolcumber.paywall.title")
                 Text(edition.displayName(isChinese: isChinese))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -109,70 +110,11 @@ struct PaywallView: View {
             Text(t("What is included", "包含内容"))
                 .font(.title3.weight(.semibold))
 
-            GroupBox {
-                VStack(alignment: .leading, spacing: 12) {
-                    entitlementFeatureRow(
-                        title: t("Clear system health overview", "清晰的系统健康概览"),
-                        detail: t(
-                            "Free includes supported live readings and explicit unavailable states.",
-                            "Free 包含受支持的实时读数与明确的不可用状态。"
-                        ),
-                        symbol: "waveform.path.ecg",
-                        tint: .blue
-                    )
-                    Divider()
-                    entitlementFeatureRow(
-                        title: t("No simulated hardware data", "不模拟硬件数据"),
-                        detail: t(
-                            "Missing sensors and unsupported controls stay visibly unavailable.",
-                            "缺失的传感器和不支持的控制能力会明确显示为不可用。"
-                        ),
-                        symbol: "checkmark.shield",
-                        tint: .green
-                    )
-                    Divider()
-                    entitlementFeatureRow(
-                        title: t("Free access does not expire", "Free 权益永不过期"),
-                        detail: t(
-                            "Declining Pro never removes the core monitoring experience.",
-                            "不购买 Pro 也不会失去核心监测体验。"
-                        ),
-                        symbol: "infinity",
-                        tint: .secondary
-                    )
-                }
-                .padding(.vertical, 4)
-            } label: {
-                Text("Free")
-                    .font(.headline)
-            }
-
-            GroupBox {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(ProFeature.offered(in: edition)) { feature in
-                        entitlementFeatureRow(
-                            title: feature.title(isChinese: isChinese),
-                            detail: feature.detail(isChinese: isChinese),
-                            symbol: "checkmark.circle.fill",
-                            tint: .green
-                        )
-
-                        if feature.id != ProFeature.offered(in: edition).last?.id {
-                            Divider()
-                        }
-                    }
-                }
-                .padding(.vertical, 4)
-            } label: {
-                HStack(spacing: 8) {
-                    Text("Pro")
-                        .font(.headline)
-                    if case .betaUnlocked = commerce.entitlement {
-                        Text(t("temporarily enabled for Beta Preview", "Beta 期间临时启用"))
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-                }
+            HStack(alignment: .top, spacing: 12) {
+                freeBenefitsCard
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                proBenefitsCard
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
             }
 
             Text(t(
@@ -182,6 +124,76 @@ struct PaywallView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var freeBenefitsCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                entitlementFeatureRow(
+                    title: t("Clear system health overview", "清晰的系统健康概览"),
+                    detail: t(
+                        "Supported live readings and explicit unavailable states.",
+                        "受支持的实时读数与明确的不可用状态。"
+                    ),
+                    symbol: "waveform.path.ecg",
+                    tint: .blue
+                )
+                Divider()
+                entitlementFeatureRow(
+                    title: t("No simulated hardware data", "不模拟硬件数据"),
+                    detail: t(
+                        "Unsupported readings stay visibly unavailable.",
+                        "不支持的读数始终明确显示为不可用。"
+                    ),
+                    symbol: "checkmark.shield",
+                    tint: .green
+                )
+                Divider()
+                entitlementFeatureRow(
+                    title: t("Free access does not expire", "Free 权益永不过期"),
+                    detail: t(
+                        "Core monitoring stays available without Pro.",
+                        "不购买 Pro 也可继续使用核心监测。"
+                    ),
+                    symbol: "infinity",
+                    tint: .secondary
+                )
+            }
+            .padding(.vertical, 4)
+        } label: {
+            Text("Free")
+                .font(.headline)
+        }
+    }
+
+    private var proBenefitsCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(ProFeature.offered(in: edition)) { feature in
+                    entitlementFeatureRow(
+                        title: feature.title(isChinese: isChinese),
+                        detail: feature.detail(isChinese: isChinese),
+                        symbol: "checkmark.circle.fill",
+                        tint: .green
+                    )
+
+                    if feature.id != ProFeature.offered(in: edition).last?.id {
+                        Divider()
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        } label: {
+            HStack(spacing: 8) {
+                Text("Pro")
+                    .font(.headline)
+                if case .betaUnlocked = commerce.entitlement {
+                    Text(t("Beta Preview", "Beta 临时开放"))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
         }
     }
 
@@ -566,10 +578,16 @@ struct PaywallView: View {
             "No saved Direct license was found on this Mac.": "此 Mac 上没有已保存的官网版授权。",
             "The saved signed license was verified.": "已验证保存的签名授权。",
             "The secure checkout page could not be opened.": "无法打开安全结账页。",
-            "This Direct Beta build does not contain a valid preview access window.": "此官网 Beta 版本未包含有效的预览访问期限。",
+            "This Beta Preview build does not contain a valid preview access window.": "此 Beta Preview 版本未包含有效的预览访问期限。",
             "Pro is active, but the App Store price is temporarily unavailable.": "Pro 已启用，但 App Store 价格暂时不可用。",
             "Pro is already active for this Apple Account.": "此 Apple 账户已启用 Pro。",
             "The verified transaction did not match the Pro lifetime product.": "已验证交易与 Pro 终身产品不匹配。",
+            "The App Store transaction did not match the Pro lifetime product.": "App Store 交易与 Pro 终身产品不匹配。",
+            "The verified App Store transaction has been revoked and cannot unlock Pro.": "已验证的 App Store 交易已被撤销，无法解锁 Pro。",
+            "An App Store transaction was revoked, but Pro remains active from separate verified entitlement evidence.": "一笔 App Store 交易已被撤销，但另一份已验证权益凭据仍使 Pro 保持启用。",
+            "The App Store reported that the Pro purchase was revoked. Pro access was removed.": "App Store 报告 Pro 购买已被撤销；Pro 权益已移除。",
+            "Pro remains active from separately verified App Store entitlement evidence.": "另一份已验证的 App Store 权益凭据仍使 Pro 保持启用。",
+            "The verified App Store transaction did not produce an active Pro entitlement.": "已验证的 App Store 交易未生成有效的 Pro 权益。",
             "Pro was unlocked by a verified App Store purchase.": "已通过验证的 App Store 购买解锁 Pro。",
             "The App Store returned an unknown purchase state.": "App Store 返回了未知的购买状态。",
             "The Pro lifetime product is not available from the App Store right now.": "Pro 终身产品当前无法从 App Store 获取。",
@@ -583,6 +601,18 @@ struct PaywallView: View {
         }
         if message.hasPrefix("This Beta Preview expired on") {
             return "此 Beta Preview 已过期。"
+        }
+        if message.hasPrefix("The App Store Pro entitlement could not be verified:") {
+            return "无法验证 App Store Pro 权益："
+                + String(message.dropFirst("The App Store Pro entitlement could not be verified:".count))
+        }
+        if message.hasPrefix("The App Store could not verify this purchase:") {
+            return "App Store 无法验证此次购买："
+                + String(message.dropFirst("The App Store could not verify this purchase:".count))
+        }
+        if message.hasPrefix("An App Store transaction could not be verified:") {
+            return "无法验证一笔 App Store 交易："
+                + String(message.dropFirst("An App Store transaction could not be verified:".count))
         }
         return message
     }

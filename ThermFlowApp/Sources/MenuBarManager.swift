@@ -150,6 +150,7 @@ final class ProductUIModel: ObservableObject {
     @Published var fanSpeed: ProductMetricState = .loading
     @Published var memoryPressure: ProductMetricState = .loading
     @Published var cpuUsage: ProductMetricState = .loading
+    @Published var storageUsage: ProductMetricState = .loading
     @Published var thermalPressure: ProductMetricState = .loading
     @Published var batteryCapacity: ProductMetricState = .loading
     @Published var batteryCycles: ProductMetricState = .loading
@@ -193,6 +194,10 @@ final class ProductUIModel: ObservableObject {
         latestSnapshot.channel == .appStore
     }
 
+    var availableMenuBarDisplayModes: [ProductMenuBarDisplayMode] {
+        isAppStoreEdition ? [.iconOnly] : ProductMenuBarDisplayMode.allCases
+    }
+
     var editionName: String {
         let edition = isAppStoreEdition
             ? productLocalized("App Store Monitor", "App Store 监测版")
@@ -200,12 +205,6 @@ final class ProductUIModel: ObservableObject {
         return productIsBetaBuild
             ? edition + productLocalized(" · Beta Preview", " · 免费 Beta")
             : edition
-    }
-
-    var hasNotchedScreen: Bool {
-        NSScreen.screens.contains { screen in
-            screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
-        }
     }
 
     var overallHealth: ProductHealthLevel {
@@ -227,6 +226,7 @@ final class ProductUIModel: ObservableObject {
             fanSpeed,
             memoryPressure,
             cpuUsage,
+            storageUsage,
             thermalPressure,
             batteryCapacity,
             batteryCycles,
@@ -290,15 +290,27 @@ final class ProductUIModel: ObservableObject {
     }
 
     func healthTitle(isChinese: Bool) -> String {
-        switch overallHealth {
-        case .healthy:
+        switch diagnosis.code {
+        case .noAlertsInAvailableMetrics:
             return isChinese ? "系统热状态正常" : "Thermal state is normal"
-        case .elevated:
-            return isChinese ? "系统负载正在升高" : "System load is elevated"
-        case .critical:
-            return isChinese ? "系统需要立即关注" : "Your Mac needs attention"
-        case .unavailable:
+        case .insufficientData:
             return isChinese ? "监测数据尚不完整" : "Monitoring data is incomplete"
+        case .thermalPressureFair:
+            return isChinese ? "系统热压力正在升高" : "Thermal pressure is elevated"
+        case .thermalPressureSerious:
+            return isChinese ? "系统热压力较高" : "Thermal pressure is serious"
+        case .thermalPressureCritical:
+            return isChinese ? "系统热压力已达危急" : "Thermal pressure is critical"
+        case .highCPUTemperature:
+            return isChinese ? "CPU 温度偏高" : "CPU temperature is high"
+        case .criticalCPUTemperature:
+            return isChinese ? "CPU 温度已达严重水平" : "CPU temperature is critical"
+        case .highMemoryUsage:
+            return isChinese ? "内存使用率偏高" : "Memory use is high"
+        case .highCPUUsage:
+            return isChinese ? "CPU 使用率偏高" : "CPU use is high"
+        case .lowDiskSpace:
+            return isChinese ? "可用存储空间不足" : "Storage space is low"
         }
     }
 
@@ -387,6 +399,12 @@ final class ProductUIModel: ObservableObject {
     }
 
     private func apply(_ snapshot: SystemSnapshot, at referenceDate: Date) {
+        if snapshot.channel == .appStore, menuBarDisplayMode != .iconOnly {
+            // This sandboxed channel deliberately has no CPU-temperature
+            // source; never offer or retain a menu-bar value it cannot read.
+            menuBarDisplayMode = .iconOnly
+        }
+
         temperature = metricState(
             snapshot.thermal.cpuTemperature,
             at: referenceDate
@@ -402,6 +420,10 @@ final class ProductUIModel: ObservableObject {
         }
 
         memoryPressure = metricState(snapshot.memory.usage, at: referenceDate) {
+            String(format: "%.0f", $0.value)
+        }
+
+        storageUsage = metricState(snapshot.storage.usage, at: referenceDate) {
             String(format: "%.0f", $0.value)
         }
 
@@ -599,12 +621,25 @@ final class ProductUIModel: ObservableObject {
 
 final class MenuBarManager: NSObject, NSPopoverDelegate {
     static let shared = MenuBarManager()
+    static let primaryStatusItemAccessibilityIdentifier = "coolcumber.menuBar.primary"
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
     private var dashboardWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
     private var isSetup = false
+
+    /// A read-only health signal for tests and diagnostics. The universal
+    /// entry point is valid only after the real AppKit status item owns its
+    /// target, action, and stable accessibility identifier.
+    var isUniversalEntryPointInstalled: Bool {
+        guard let button = statusItem.button else { return false }
+        return isSetup
+            && button.target === self
+            && button.action == #selector(handleMainClick(_:))
+            && button.accessibilityIdentifier()
+                == Self.primaryStatusItemAccessibilityIdentifier
+    }
 
     func setup() {
         guard !isSetup else { return }
@@ -617,6 +652,13 @@ final class MenuBarManager: NSObject, NSPopoverDelegate {
     }
 
     private func configureDashboardWindow() {
+        #if DEBUG
+        let isStoreScreenshotCapture = ProcessInfo.processInfo.arguments.contains(
+            "--store-screenshot"
+        )
+        #else
+        let isStoreScreenshotCapture = false
+        #endif
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1040, height: 700),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -627,10 +669,31 @@ final class MenuBarManager: NSObject, NSPopoverDelegate {
         window.minSize = NSSize(width: 780, height: 560)
         window.isReleasedWhenClosed = false
         window.isRestorable = true
-        window.setFrameAutosaveName("CoolCumberMainWindow")
+        if isStoreScreenshotCapture {
+            // XCUIScreenshot otherwise includes the translucent drop-shadow
+            // margin, producing a 2560×1704 asset instead of Apple's exact
+            // 2560×1600 desktop size.
+            window.hasShadow = false
+            window.isOpaque = true
+            window.backgroundColor = .windowBackgroundColor
+        }
+        if !isStoreScreenshotCapture {
+            window.setFrameAutosaveName("CoolCumberMainWindow")
+        }
         window.contentViewController = NSHostingController(
             rootView: ProductRootView(model: ProductUIModel.shared)
         )
+        if isStoreScreenshotCapture {
+            // Apply this after installing the hosting controller; otherwise
+            // SwiftUI's initial fitting size can shrink the real window back
+            // to its 780×560 minimum before the capture begins.
+            window.setFrame(
+                // XCUI's macOS window attachment includes 52 points of native
+                // title-bar chrome beyond the requested content rectangle.
+                NSRect(x: 0, y: 0, width: 1280, height: 748),
+                display: false
+            )
+        }
         dashboardWindow = window
     }
 
@@ -655,6 +718,10 @@ final class MenuBarManager: NSObject, NSPopoverDelegate {
         button.image?.isTemplate = true
         button.imagePosition = .imageLeft
         button.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .medium)
+        button.setAccessibilityIdentifier(
+            Self.primaryStatusItemAccessibilityIdentifier
+        )
+        button.setAccessibilityLabel("CoolCumber")
         button.target = self
         button.action = #selector(handleMainClick(_:))
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])

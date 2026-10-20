@@ -15,9 +15,9 @@ usage() {
 Usage:
   Scripts/release-direct.sh \
     --output-dir /absolute/path \
-    --channel Release|Beta \
+    --channel Beta \
     --version 1.2.0 \
-    --build 3 \
+    --build 4 \
     --team-id TEAM_ID \
     --source-commit FULL_40_CHARACTER_HEAD \
     --mas-app /path/to/CoolCumber.app \
@@ -34,6 +34,9 @@ Notary authentication must use exactly one method:
 
 This command creates and validates local artifacts. It never creates or replaces
 a GitHub Release.
+
+Release sequence for version 1.2.0:
+  Beta uses build 4 only. Production Release uses build 5 or later.
 USAGE
 }
 
@@ -154,6 +157,7 @@ case "$DIRECT_APP_SIGNING_IDENTITY" in
         exit 64
         ;;
 esac
+release_require_channel_build_sequence "$channel" "$version" "$build_number"
 
 if [ -n "${APPLE_ID:-}" ] || [ -n "${APP_SPECIFIC_PASSWORD:-}" ]; then
     printf '%s\n' 'Legacy Apple-ID password credentials are not accepted; use an API key or keychain profile.' >&2

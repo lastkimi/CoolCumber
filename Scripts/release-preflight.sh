@@ -29,6 +29,9 @@ Notary credentials are read from the environment, never from command-line flags.
 Use one of these credential sets:
   NOTARY_KEYCHAIN_PROFILE (or --notary-profile)
   NOTARY_KEY_PATH + NOTARY_KEY_ID + NOTARY_ISSUER_ID
+
+Release sequence for version 1.2.0:
+  Beta uses build 4 only. Production Release uses build 5 or later.
 USAGE
 }
 
@@ -128,6 +131,7 @@ case "$configuration" in Release|Beta) ;; *)
     printf '%s\n' '--configuration must be exactly Release or Beta.' >&2
     exit 64
 esac
+release_require_channel_build_sequence "$configuration" "$expected_version" "$expected_build"
 if ! [[ "$team_id" =~ ^[A-Z0-9]{10}$ ]]; then
     printf '%s\n' 'Team ID must contain exactly 10 uppercase letters or digits.' >&2
     exit 64

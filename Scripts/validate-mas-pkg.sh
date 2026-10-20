@@ -12,7 +12,7 @@ Usage:
   Scripts/validate-mas-pkg.sh \
     --pkg /absolute/path/to/AppStore.pkg \
     --version 1.2.0 \
-    --build 3 \
+    --build 4 \
     --team-id TEAM_ID
 
 This command is read-only with respect to the package. It expands a temporary
@@ -21,7 +21,7 @@ copy and validates the exact payload that would be uploaded.
   Scripts/validate-mas-pkg.sh \
     --app /absolute/path/to/CoolCumber.app \
     --version 1.2.0 \
-    --build 3 \
+    --build 4 \
     --team-id TEAM_ID
 USAGE
 }

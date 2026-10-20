@@ -12,7 +12,7 @@ replacements = [
 
 for root, _, files in os.walk(directory):
     for file in files:
-        if file.endswith('.swift') and file not in ['DashboardView.swift', 'CoolingView.swift', 'SmartBarView.swift']:
+        if file.endswith('.swift') and file not in ['DashboardView.swift', 'CoolingView.swift']:
             path = os.path.join(root, file)
             with open(path, 'r') as f:
                 content = f.read()

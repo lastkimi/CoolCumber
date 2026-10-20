@@ -16,9 +16,9 @@ usage() {
 Build and seal a Mac App Store release (never uploads):
   Scripts/release-mas.sh \
     --output-dir /absolute/path \
-    --channel Release|Beta \
+    --channel Beta \
     --version 1.2.0 \
-    --build 3 \
+    --build 4 \
     --team-id TEAM_ID \
     --source-commit FULL_40_CHARACTER_HEAD
 
@@ -41,6 +41,9 @@ Both modes require App Store Connect API authentication:
 Upload mode uses Xcode's supported app-store-connect export with
 destination=upload. It reuses the sealed xcarchive bound into the manifest;
 it does not invoke xcodegen, archive, build, altool, or Transporter.
+
+Release sequence for version 1.2.0:
+  Beta uses build 4 only. Production Release uses build 5 or later.
 USAGE
 }
 
@@ -113,6 +116,7 @@ validate_release_values() {
         printf '%s\n' 'Version, build, or Team ID has an invalid format.' >&2
         exit 64
     fi
+    release_require_channel_build_sequence "$channel" "$version" "$build_number"
 }
 
 validate_asc_key() {

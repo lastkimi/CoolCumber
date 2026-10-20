@@ -6,8 +6,8 @@ same typed `SystemSnapshot` used by history, alerts, and the Widget.
 Current boundaries:
 
 - standard resizable macOS window with `NavigationSplitView`;
-- universal menu-bar popover for both notched and non-notched Macs;
-- optional SmartBar enhancement only on a detected notch display;
+- universal menu-bar status item and popover on every supported Mac, without
+  display-cutout detection or a screen-positioned overlay;
 - explicit loading, available, stale, unsupported, and unavailable states;
 - semantic system colors, light/dark appearance, Reduce Motion support, and
   accessibility labels for the main monitoring surfaces;

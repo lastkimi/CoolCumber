@@ -136,6 +136,53 @@ expected_app_group = "BSKR6CQ765.com.slmcamp.CoolCumber"
 end
 
 project_directory = File.dirname(File.expand_path(project_path))
+app_source_directory = File.join(project_directory, "ThermFlowApp/Sources")
+app_lifecycle_path = File.join(app_source_directory, "ThermFlowApp.swift")
+menu_bar_manager_path = File.join(app_source_directory, "MenuBarManager.swift")
+app_lifecycle_source = File.file?(app_lifecycle_path) ? File.read(app_lifecycle_path) : ""
+menu_bar_manager_source = File.file?(menu_bar_manager_path) ? File.read(menu_bar_manager_path) : ""
+
+# The menu-bar status item is CoolCumber's universal entry point. Keep this
+# boundary independent of display shape so Intel Macs and external displays
+# receive the same launch path as a Mac with a camera housing.
+unless app_lifecycle_source.include?("MenuBarManager.shared.setup()")
+  failures << "App launch must always set up the universal menu-bar entry point"
+end
+unless menu_bar_manager_source.include?("NSStatusBar.system.statusItem") &&
+       menu_bar_manager_source.include?("button.action = #selector(handleMainClick(_:))") &&
+       menu_bar_manager_source.include?("coolcumber.menuBar.primary")
+  failures << "MenuBarManager must expose an actionable NSStatusItem"
+end
+
+# 1.2.0 build 4 intentionally removes the optional screen-positioned SmartBar. This
+# gate prevents the removed third-party-inspired cutout geometry from drifting
+# back into either shipping channel under a renamed type or source file.
+removed_overlay_files = %w[
+  SmartBarManager.swift
+  SmartBarView.swift
+]
+removed_overlay_files.each do |file_name|
+  path = File.join(app_source_directory, file_name)
+  failures << "Removed screen overlay must not be present: #{file_name}" if File.exist?(path)
+end
+
+forbidden_cutout_tokens = %w[
+  SuperIsland
+  auxiliaryTopLeftArea
+  auxiliaryTopRightArea
+  notchRect
+  smartBarEnabled
+]
+Dir.glob(File.join(app_source_directory, "**/*.swift")).sort.each do |source_path|
+  source = File.read(source_path)
+  forbidden_cutout_tokens.each do |token|
+    if source.include?(token)
+      relative_path = source_path.delete_prefix("#{project_directory}/")
+      failures << "#{relative_path} must not contain removed display-overlay token #{token}"
+    end
+  end
+end
+
 daemon_main_path = File.join(project_directory, "ThermFlowDaemon/Sources/main.swift")
 daemon_main_source = File.file?(daemon_main_path) ? File.read(daemon_main_path) : ""
 unless daemon_main_source.include?("setConnectionCodeSigningRequirement") &&

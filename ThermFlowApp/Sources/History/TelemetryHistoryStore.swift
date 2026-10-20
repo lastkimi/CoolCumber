@@ -2,14 +2,7 @@ import Combine
 import Foundation
 import ThermFlowCore
 
-enum TelemetryHistoryStoreStatus: String, Equatable {
-    case ready
-    case appGroupUnavailable
-    case corruptArchive
-    case readFailed
-    case writeFailed
-    case limitsExceeded
-}
+typealias TelemetryHistoryStoreStatus = HistoryPersistenceStatus
 
 /// Local-only history persistence. Callers provide the current Pro entitlement;
 /// this type deliberately has no StoreKit or UI dependency.
@@ -18,8 +11,7 @@ final class TelemetryHistoryStore {
     static let relativeDirectory = "Library/Application Support/CoolCumber/History"
     static let fileName = "telemetry-history-v1.json"
 
-    private let fileManager: FileManager
-    private let codec: HistoryArchiveCodec
+    private let repository: HistoryFileRepository
     private let sampler: HistorySamplingPolicy
     private let csvEncoder: HistoryCSVEncoder
     private let workerQueue = DispatchQueue(
@@ -34,25 +26,49 @@ final class TelemetryHistoryStore {
     private var requestedAccess: HistoryEntitlementAccess
     private let stateDidChange = PassthroughSubject<Void, Never>()
 
-    init(
+    convenience init(
         daemonManager: DaemonManager = .shared,
         initialAccess: HistoryEntitlementAccess = .undetermined,
         fileManager: FileManager = .default,
         maximumRecords: Int = HistoryArchiveCodec.defaultMaximumRecords,
         maximumBytes: Int = HistoryArchiveCodec.defaultMaximumBytes
     ) {
-        self.fileManager = fileManager
+        self.init(
+            snapshotPublisher: daemonManager.$systemSnapshot.eraseToAnyPublisher(),
+            initialAccess: initialAccess,
+            fileManager: fileManager,
+            historyFileURL: Self.defaultHistoryFileURL(using: fileManager),
+            referenceDate: Date(),
+            maximumRecords: maximumRecords,
+            maximumBytes: maximumBytes
+        )
+    }
+
+    /// Explicit persistence and publisher injection keeps disk boundaries and
+    /// retention transitions deterministic in unit tests while production uses
+    /// the App Group convenience initializer above.
+    init(
+        snapshotPublisher: AnyPublisher<SystemSnapshot, Never>,
+        initialAccess: HistoryEntitlementAccess,
+        fileManager: FileManager,
+        historyFileURL: URL?,
+        referenceDate: Date,
+        maximumRecords: Int = HistoryArchiveCodec.defaultMaximumRecords,
+        maximumBytes: Int = HistoryArchiveCodec.defaultMaximumBytes
+    ) {
         requestedAccess = initialAccess
-        codec = HistoryArchiveCodec(
+        repository = HistoryFileRepository(
+            fileURL: historyFileURL,
+            fileManager: fileManager,
             maximumRecords: maximumRecords,
             maximumBytes: maximumBytes
         )
         sampler = HistorySamplingPolicy()
         csvEncoder = HistoryCSVEncoder()
 
-        loadExistingHistory(referenceDate: Date())
+        loadExistingHistory(referenceDate: referenceDate)
 
-        snapshotCancellable = daemonManager.$systemSnapshot
+        snapshotCancellable = snapshotPublisher
             .receive(on: workerQueue)
             .throttle(
                 for: .seconds(Int(HistorySamplingPolicy.bucketDuration)),
@@ -113,19 +129,8 @@ final class TelemetryHistoryStore {
     func removeAllHistory() {
         workerQueue.async { [weak self] in
             guard let self else { return }
-            guard let fileURL = self.historyFileURL else {
-                self.setState(records: [], status: .appGroupUnavailable)
-                return
-            }
-
-            do {
-                if self.fileManager.fileExists(atPath: fileURL.path) {
-                    try self.fileManager.removeItem(at: fileURL)
-                }
-                self.setState(records: [], status: .ready)
-            } catch {
-                self.setState(records: self.records, status: .writeFailed)
-            }
+            let result = self.repository.remove(existingRecords: self.records)
+            self.setState(records: result.records, status: result.status)
         }
     }
 
@@ -134,48 +139,15 @@ final class TelemetryHistoryStore {
     }
 
     private func loadExistingHistory(referenceDate: Date) {
-        guard let fileURL = historyFileURL else {
-            setState(records: [], status: .appGroupUnavailable)
-            return
-        }
-        guard fileManager.fileExists(atPath: fileURL.path) else {
-            setState(records: [], status: .ready)
-            return
-        }
-
-        do {
-            let data = try readBoundedArchive(from: fileURL)
-            let decoded = try codec.decode(data)
-            let retained = retentionPolicy.applying(
-                to: decoded,
-                referenceDate: referenceDate
-            )
-            setState(records: retained, status: .ready)
-        } catch let error as HistoryArchiveError {
-            let status: TelemetryHistoryStoreStatus = error == .archiveTooLarge
-                || error == .tooManyRecords
-                ? .limitsExceeded
-                : .corruptArchive
-            setState(records: [], status: status)
-        } catch {
-            setState(records: [], status: .readFailed)
-        }
-    }
-
-    private func readBoundedArchive(from fileURL: URL) throws -> Data {
-        let handle = try FileHandle(forReadingFrom: fileURL)
-        defer { try? handle.close() }
-        guard let data = try handle.read(upToCount: codec.maximumBytes + 1),
-              !data.isEmpty else {
-            throw HistoryArchiveError.invalidArchive
-        }
-        guard data.count <= codec.maximumBytes else {
-            throw HistoryArchiveError.archiveTooLarge
-        }
-        return data
+        let result = repository.load(
+            access: requestedAccess,
+            referenceDate: referenceDate
+        )
+        setState(records: result.records, status: result.status)
     }
 
     private func ingest(_ record: HistoryRecord, referenceDate: Date) {
+        dispatchPrecondition(condition: .onQueue(workerQueue))
         guard record.usableValueCount(maximumAge: sampler.maximumMetricAge) > 0 else {
             return
         }
@@ -190,32 +162,12 @@ final class TelemetryHistoryStore {
     }
 
     private func persist(_ records: [HistoryRecord]) {
-        guard let fileURL = historyFileURL else {
-            setState(records: records, status: .appGroupUnavailable)
-            return
-        }
-
-        do {
-            let encoding = try codec.encodeNewestRecordsFitting(records)
-            let directoryURL = fileURL.deletingLastPathComponent()
-            try fileManager.createDirectory(
-                at: directoryURL,
-                withIntermediateDirectories: true
-            )
-            try encoding.data.write(to: fileURL, options: .atomic)
-            setState(records: encoding.records, status: .ready)
-        } catch let error as HistoryArchiveError {
-            let status: TelemetryHistoryStoreStatus = error == .archiveTooLarge
-                || error == .tooManyRecords
-                ? .limitsExceeded
-                : .writeFailed
-            setState(records: records, status: status)
-        } catch {
-            setState(records: records, status: .writeFailed)
-        }
+        dispatchPrecondition(condition: .onQueue(workerQueue))
+        let result = repository.persist(records)
+        setState(records: result.records, status: result.status)
     }
 
-    private var historyFileURL: URL? {
+    private static func defaultHistoryFileURL(using fileManager: FileManager) -> URL? {
         fileManager.containerURL(
             forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier
         )?

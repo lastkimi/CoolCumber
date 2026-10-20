@@ -25,6 +25,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
         let arguments = ProcessInfo.processInfo.arguments
+        let environment = ProcessInfo.processInfo.environment
+
+        // Hosted unit tests exercise each boundary explicitly. Starting live
+        // polling, StoreKit observation and App Group services before XCTest
+        // establishes its session can stall the macOS test host and also makes
+        // deterministic logic tests depend on this machine's services.
+        if environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCTestBundlePath"] != nil {
+            return
+        }
 
         #if DEBUG
         if arguments.contains("--ui-language-en") {
@@ -47,11 +57,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ProductUIModel.shared.startReadOnlyMonitoring()
         Task { @MainActor in
             ProductDataCoordinator.shared.start()
-        }
-
-        let smartBarEnabled = UserDefaults.standard.bool(forKey: "smartBarEnabled")
-        if smartBarEnabled && ProductUIModel.shared.hasNotchedScreen {
-            SmartBarManager.shared.setup()
         }
 
         let shouldShowWelcome = arguments.contains("--show-welcome")
@@ -310,8 +315,8 @@ private struct ProductWelcomeView: View {
                         : (isChinese ? "硬件组件始终可选" : "Hardware helper stays optional"),
                     detail: model.isAppStoreEdition
                         ? (isChinese
-                            ? "App Store 版不会安装特权组件；底层温度和风扇数据可能显示为不支持。"
-                            : "The App Store edition never installs a privileged helper; low-level temperature and fan readings may be unsupported.")
+                            ? "App Store 版不会安装特权组件；此版本不提供 CPU/GPU 温度或风扇转速，只显示 macOS 热压力。"
+                            : "The App Store edition never installs a privileged helper. This build does not provide CPU/GPU temperature or fan speed; it shows macOS thermal pressure instead.")
                         : (isChinese
                             ? "只有在你查看说明并明确确认后，才会注册有界只读的硬件监测组件。"
                             : "The bounded, read-only hardware helper is registered only after you review the explanation and explicitly confirm.")
@@ -458,6 +463,7 @@ private struct ProductHealthSummary: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("coolcumber.page.overview.top")
     }
 }
 
@@ -534,8 +540,8 @@ private struct ProductActivityPage: View {
                 icon: "waveform.path.ecg",
                 title: isChinese ? "活动" : "Activity",
                 subtitle: isChinese
-                    ? "查看 CPU 和内存负载；进程操作不会在后台自动执行。"
-                    : "Review CPU and memory load. Process actions never run automatically in the background."
+                    ? "查看 CPU、内存与存储负载；进程操作不会在后台自动执行。"
+                    : "Review CPU, memory, and storage load. Process actions never run automatically in the background."
             )
 
             HStack(alignment: .top, spacing: 16) {
@@ -549,6 +555,12 @@ private struct ProductActivityPage: View {
                     title: isChinese ? "内存使用" : "Memory use",
                     icon: "memorychip",
                     state: model.memoryPressure,
+                    unit: "%"
+                )
+                ProductMetricCard(
+                    title: isChinese ? "存储使用" : "Storage use",
+                    icon: "internaldrive",
+                    state: model.storageUsage,
                     unit: "%"
                 )
             }
@@ -653,7 +665,6 @@ private struct ProductMaintenancePage: View {
 struct ProductSettingsPane: View {
     @ObservedObject var model: ProductUIModel
     @ObservedObject private var language = LanguageManager.shared
-    @AppStorage("smartBarEnabled") private var smartBarEnabled = false
     @ObservedObject private var commerce = PurchaseController.shared
     @State private var showsPaywall = false
 
@@ -666,7 +677,7 @@ struct ProductSettingsPane: View {
                     isChinese ? "显示内容" : "Display",
                     selection: $model.menuBarDisplayMode
                 ) {
-                    ForEach(ProductMenuBarDisplayMode.allCases) { mode in
+                    ForEach(model.availableMenuBarDisplayModes) { mode in
                         Text(mode.title(isChinese: isChinese)).tag(mode)
                     }
                 }
@@ -677,7 +688,7 @@ struct ProductSettingsPane: View {
                     .foregroundColor(.secondary)
             }
 
-            Section(isChinese ? "语言与显示" : "Language & Display") {
+            Section(isChinese ? "语言" : "Language") {
                 Picker(
                     isChinese ? "语言" : "Language",
                     selection: Binding(
@@ -687,20 +698,6 @@ struct ProductSettingsPane: View {
                 ) {
                     Text("English").tag("en")
                     Text("中文").tag("zh")
-                }
-
-                if model.hasNotchedScreen {
-                    Toggle(isChinese ? "启用刘海 SmartBar" : "Enable notch SmartBar", isOn: $smartBarEnabled)
-                    Text(isChinese
-                         ? "SmartBar 是可选增强，设置将在下次启动时生效。"
-                         : "SmartBar is optional. This setting takes effect on the next launch.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                } else {
-                    LabeledContent(isChinese ? "刘海 SmartBar" : "Notch SmartBar") {
-                        Text(isChinese ? "此显示器不支持" : "Not available on this display")
-                            .foregroundColor(.secondary)
-                    }
                 }
             }
 
@@ -967,11 +964,12 @@ private struct ProductMetricCard: View {
             Text(state.supportingText)
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
-                .lineLimit(2)
-                .frame(minHeight: 30, alignment: .topLeading)
+                .lineLimit(4)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(minHeight: 48, alignment: .topLeading)
         }
         .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 142, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 160, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor))
         .overlay(
             RoundedRectangle(cornerRadius: 10)

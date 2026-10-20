@@ -7,7 +7,7 @@ final class SharedSnapshotWriter {
     static let relativeDirectory = "Library/Application Support/CoolCumber/Telemetry"
     static let fileName = "system-snapshot-v1.json"
     static let maximumEncodedSnapshotSize = 1_048_576
-    static let maximumFanCount = 8
+    static let maximumFanCount = WidgetSnapshotPolicy.defaultMaximumFanCount
 
     private let fileManager: FileManager
     private let encoder: JSONEncoder
