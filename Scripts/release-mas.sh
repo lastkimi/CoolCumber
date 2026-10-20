@@ -265,6 +265,7 @@ if [ -n "$upload_archive" ]; then
 
     "$script_directory/validate-mas-pkg.sh" \
         --pkg "$reviewed_pkg" \
+        --configuration "$channel" \
         --version "$version" \
         --build "$build_number" \
         --team-id "$team_id"
@@ -284,6 +285,7 @@ if [ -n "$upload_archive" ]; then
     archived_app="$archive_path/Products/Applications/$RELEASE_PRODUCT_NAME.app"
     "$script_directory/validate-mas-pkg.sh" \
         --app "$archived_app" \
+        --configuration "$channel" \
         --allow-development-archive \
         --version "$version" \
         --build "$build_number" \
@@ -389,6 +391,7 @@ xcodebuild \
 archived_app="$archive_path/Products/Applications/$RELEASE_PRODUCT_NAME.app"
 "$script_directory/validate-mas-pkg.sh" \
     --app "$archived_app" \
+    --configuration "$channel" \
     --allow-development-archive \
     --version "$version" \
     --build "$build_number" \
@@ -422,6 +425,7 @@ mv "$(sed -n '1p' "$packages_file")" "$pkg_path"
 
 "$script_directory/validate-mas-pkg.sh" \
     --pkg "$pkg_path" \
+    --configuration "$channel" \
     --version "$version" \
     --build "$build_number" \
     --team-id "$team_id"
@@ -441,6 +445,7 @@ fi
 sealed_archive="$(sed -n '1p' "$sealed_archives_file")"
 "$script_directory/validate-mas-pkg.sh" \
     --app "$sealed_archive/Products/Applications/$RELEASE_PRODUCT_NAME.app" \
+    --configuration "$channel" \
     --allow-development-archive \
     --version "$version" \
     --build "$build_number" \

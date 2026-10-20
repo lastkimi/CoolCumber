@@ -101,3 +101,9 @@ jobs:
           Scripts/build-unsigned.sh
           --derived-data "${RUNNER_TEMP}/coolcumber-${{ matrix.configuration }}"
           --configuration "${{ matrix.configuration }}"
+      - name: Verify Beta dates survive an incremental rebuild
+        if: matrix.configuration == 'Beta'
+        run: >-
+          Scripts/build-unsigned.sh
+          --derived-data "${RUNNER_TEMP}/coolcumber-Beta"
+          --configuration Beta

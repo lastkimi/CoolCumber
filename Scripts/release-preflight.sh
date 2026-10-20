@@ -648,6 +648,7 @@ done < "$mas_extensions"
 if [ -n "$mas_installer" ]; then
 "$script_directory/validate-mas-pkg.sh" \
     --pkg "$mas_installer" \
+    --configuration "$configuration" \
     --version "$expected_version" \
     --build "$expected_build" \
     --team-id "$team_id"

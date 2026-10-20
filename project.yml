@@ -87,6 +87,8 @@ targets:
             /usr/libexec/PlistBuddy -c "Add :CoolCumberBetaExpiresAt string ${INFOPLIST_KEY_CoolCumberBetaExpiresAt}" "${app_info_plist}"
           fi
         name: Inject Beta Access Window
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
 
   ThermFlowAppStore:
     type: application
@@ -147,6 +149,8 @@ targets:
             /usr/libexec/PlistBuddy -c "Add :CoolCumberBetaExpiresAt string ${INFOPLIST_KEY_CoolCumberBetaExpiresAt}" "${app_info_plist}"
           fi
         name: Inject Beta Access Window
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
 
   ThermFlowDaemon:
     type: tool

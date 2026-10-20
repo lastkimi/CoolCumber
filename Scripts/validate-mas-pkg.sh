@@ -13,7 +13,8 @@ Usage:
     --pkg /absolute/path/to/AppStore.pkg \
     --version 1.2.0 \
     --build 4 \
-    --team-id TEAM_ID
+    --team-id TEAM_ID \
+    --configuration Beta
 
 For an intermediate Xcode automatically signed archive only, --app may also
 use --allow-development-archive. Package validation never accepts that option.
@@ -25,7 +26,8 @@ copy and validates the exact payload that would be uploaded.
     --app /absolute/path/to/CoolCumber.app \
     --version 1.2.0 \
     --build 4 \
-    --team-id TEAM_ID
+    --team-id TEAM_ID \
+    --configuration Beta
 USAGE
 }
 
@@ -34,6 +36,7 @@ app_input=""
 expected_version=""
 expected_build=""
 team_id=""
+configuration=""
 allow_development_archive=0
 
 while [ "$#" -gt 0 ]; do
@@ -56,6 +59,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --team-id)
             team_id="${2:-}"
+            shift 2
+            ;;
+        --configuration)
+            configuration="${2:-}"
             shift 2
             ;;
         --allow-development-archive)
@@ -86,6 +93,11 @@ require_value() {
 require_value '--version' "$expected_version"
 require_value '--build' "$expected_build"
 require_value '--team-id' "$team_id"
+require_value '--configuration' "$configuration"
+case "$configuration" in Beta|Release) ;; *)
+    printf '%s\n' '--configuration must be Beta or Release.' >&2
+    exit 64
+esac
 
 if { [ -z "$pkg_path" ] && [ -z "$app_input" ]; } ||
    { [ -n "$pkg_path" ] && [ -n "$app_input" ]; }; then
@@ -389,6 +401,15 @@ assert_equal "$(plist_value "$widget_info" CFBundleVersion)" "$expected_build" '
 
 app_executable="$(plist_value "$app_info" CFBundleExecutable)"
 widget_executable="$(plist_value "$widget_info" CFBundleExecutable)"
+beta_starts_at="$(plist_value "$app_info" CoolCumberBetaStartsAt 2> /dev/null || true)"
+beta_expires_at="$(plist_value "$app_info" CoolCumberBetaExpiresAt 2> /dev/null || true)"
+if [ "$configuration" = Beta ]; then
+    assert_equal "$beta_starts_at" "$RELEASE_BETA_STARTS_AT" 'Beta preview start'
+    assert_equal "$beta_expires_at" "$RELEASE_BETA_EXPIRES_AT" 'Beta preview expiry'
+elif [ -n "$beta_starts_at$beta_expires_at" ]; then
+    printf '%s\n' 'Production Release payload must not contain Beta preview dates.' >&2
+    exit 1
+fi
 assert_universal_binary "$app_path/Contents/MacOS/$app_executable" 'Mac App Store app'
 assert_universal_binary "$widget_path/Contents/MacOS/$widget_executable" 'Mac App Store widget'
 assert_mas_signature "$app_path" 'Mac App Store app'

@@ -121,6 +121,13 @@ failures << "Privileged helper must enable Hardened Runtime" unless enabled.call
   unless info_property.call(target, "ITSAppUsesNonExemptEncryption") == false
     failures << "#{label} must declare ITSAppUsesNonExemptEncryption=false"
   end
+  window_injection = Array(target["postBuildScripts"]).find do |script|
+    script["name"] == "Inject Beta Access Window"
+  end
+  unless window_injection &&
+         Array(window_injection["inputFiles"]).include?("$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)")
+    failures << "#{label} Beta injection must depend on the processed Info.plist"
+  end
 end
 
 expected_app_group = "BSKR6CQ765.com.slmcamp.CoolCumber"
