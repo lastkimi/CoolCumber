@@ -49,6 +49,7 @@ final class BetaAccessSmokeTests: XCTestCase {
             matching: "label == 'Free Beta: 30-day history temporarily enabled' OR value == 'Free Beta: 30-day history temporarily enabled' OR label == '免费 Beta：30 天历史已临时启用' OR value == '免费 Beta：30 天历史已临时启用'",
             in: app
         ).waitForExistence(timeout: 20))
+        app.windows.firstMatch.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -1_200)
         XCTAssertTrue(element(
             matching: "label == 'Export CSV…' OR label == '导出 CSV…'",
             in: app
@@ -64,6 +65,7 @@ final class BetaAccessSmokeTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--skip-welcome", destination]
         app.launch()
+        app.activate()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 20))
         XCTAssertTrue(
             app.statusItems["coolcumber.menuBar.primary"].waitForExistence(timeout: 20),

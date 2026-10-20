@@ -247,6 +247,13 @@ extract_entitlements() {
     plutil -lint "$destination" > /dev/null
 }
 
+is_development_archive() {
+    [ "$allow_development_archive" -eq 1 ] || return 1
+    local details
+    details="$(codesign -d --verbose=4 "$1" 2>&1)" || return 1
+    grep -F -q 'Authority=Apple Development:' <<< "$details"
+}
+
 assert_signed_entitlements() {
     local signed_path="$1"
     local expected_bundle_id="$2"
@@ -260,13 +267,15 @@ assert_signed_entitlements() {
     extract_entitlements "$signed_path" "$entitlements"
     sandbox_value="$(plist_value "$entitlements" com.apple.security.app-sandbox)"
     assert_equal "$sandbox_value" 'true' "$label app sandbox entitlement"
-    if [ "$allow_development_archive" -eq 0 ] &&
+    if ! is_development_archive "$signed_path" &&
        [ "$(plist_value "$entitlements" com.apple.security.get-task-allow 2> /dev/null || true)" = 'true' ]; then
         printf '%s must not contain get-task-allow.\n' "$label" >&2
         exit 1
     fi
-    application_identifier="$(plist_value "$entitlements" com.apple.application-identifier)"
-    assert_equal "$application_identifier" "$team_id.$expected_bundle_id" "$label signed application-identifier"
+    application_identifier="$(plist_value "$entitlements" com.apple.application-identifier 2> /dev/null || true)"
+    if [ -n "$application_identifier" ] || ! is_development_archive "$signed_path"; then
+        assert_equal "$application_identifier" "$team_id.$expected_bundle_id" "$label signed application-identifier"
+    fi
     groups="$(plist_value "$entitlements" com.apple.security.application-groups)"
     if ! grep -F -q "$RELEASE_APP_GROUP" <<< "$groups"; then
         printf '%s signed application groups do not contain %s.\n' "$label" "$RELEASE_APP_GROUP" >&2
@@ -286,6 +295,9 @@ assert_provisioning_profile() {
     local groups
 
     if [ ! -s "$profile_path" ]; then
+        if is_development_archive "$bundle_path"; then
+            return
+        fi
         printf '%s is missing embedded.provisionprofile.\n' "$label" >&2
         exit 1
     fi
