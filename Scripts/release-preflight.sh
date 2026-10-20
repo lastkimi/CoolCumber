@@ -29,6 +29,9 @@ Notary credentials are read from the environment, never from command-line flags.
 Use one of these credential sets:
   NOTARY_KEYCHAIN_PROFILE (or --notary-profile)
   NOTARY_KEY_PATH + NOTARY_KEY_ID + NOTARY_ISSUER_ID
+
+Release sequence for version 1.2.0:
+  Beta uses build 4 only. Production Release uses build 5 or later.
 USAGE
 }
 
@@ -128,6 +131,7 @@ case "$configuration" in Release|Beta) ;; *)
     printf '%s\n' '--configuration must be exactly Release or Beta.' >&2
     exit 64
 esac
+release_require_channel_build_sequence "$configuration" "$expected_version" "$expected_build"
 if ! [[ "$team_id" =~ ^[A-Z0-9]{10}$ ]]; then
     printf '%s\n' 'Team ID must contain exactly 10 uppercase letters or digits.' >&2
     exit 64
@@ -365,12 +369,18 @@ assert_provisioning_application_identifier() {
     local expected_identifier="$2"
     local label="$3"
     local stem="$4"
+    local allow_unprofiled_team_group="${5:-0}"
     local profile="$bundle/Contents/embedded.provisionprofile"
     local decoded="$work_dir/$stem-profile.plist"
     local actual_identifier
     local profile_team
 
     if [ ! -s "$profile" ]; then
+        # macOS permits Team-ID-prefixed App Groups without a provisioning
+        # profile. TestFlight is different and continues to require one.
+        if [ "$allow_unprofiled_team_group" -eq 1 ]; then
+            return
+        fi
         printf '%s is missing embedded.provisionprofile.\n' "$label" >&2
         exit 1
     fi
@@ -380,7 +390,8 @@ assert_provisioning_application_identifier() {
     fi
     plutil -lint "$decoded" > /dev/null
     profile_team="$(plist_value "$decoded" TeamIdentifier:0)"
-    actual_identifier="$(plist_value "$decoded" Entitlements:application-identifier)"
+    actual_identifier="$(plist_value "$decoded" Entitlements:com.apple.application-identifier 2> /dev/null ||
+        plist_value "$decoded" Entitlements:application-identifier)"
     if [ "$profile_team" != "$team_id" ] || [ "$actual_identifier" != "$team_id.$expected_identifier" ]; then
         printf '%s provisioning identity mismatch: expected %s.%s.\n' \
             "$label" "$team_id" "$expected_identifier" >&2
@@ -628,11 +639,11 @@ while IFS= read -r extension; do
     extension_index=$((extension_index + 1))
 done < "$mas_extensions"
 
-assert_provisioning_application_identifier "$direct_app" "$RELEASE_APP_BUNDLE_ID" 'Direct app' direct-app
+assert_provisioning_application_identifier "$direct_app" "$RELEASE_APP_BUNDLE_ID" 'Direct app' direct-app 1
 assert_provisioning_application_identifier "$mas_app" "$RELEASE_APP_BUNDLE_ID" 'Mac App Store app' mas-app
 direct_profile_index=0
 while IFS= read -r extension; do
-    assert_provisioning_application_identifier "$extension" "$RELEASE_WIDGET_BUNDLE_ID" 'Direct embedded extension' "direct-extension-$direct_profile_index"
+    assert_provisioning_application_identifier "$extension" "$RELEASE_WIDGET_BUNDLE_ID" 'Direct embedded extension' "direct-extension-$direct_profile_index" 1
     direct_profile_index=$((direct_profile_index + 1))
 done < "$direct_extensions"
 mas_profile_index=0
@@ -644,6 +655,7 @@ done < "$mas_extensions"
 if [ -n "$mas_installer" ]; then
 "$script_directory/validate-mas-pkg.sh" \
     --pkg "$mas_installer" \
+    --configuration "$configuration" \
     --version "$expected_version" \
     --build "$expected_build" \
     --team-id "$team_id"

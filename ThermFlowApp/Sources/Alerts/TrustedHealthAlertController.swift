@@ -22,17 +22,21 @@ actor TrustedHealthAlertController {
     private let notificationCenter: UNUserNotificationCenter
     private let defaults: UserDefaults
     private let policy: TrustedHealthAlertPolicy
+    private let notificationBuilder: TrustedHealthAlertNotificationBuilder
     private var configuration: HealthAlertConfiguration
     private var deliveryInProgress = false
 
     init(
         notificationCenter: UNUserNotificationCenter = .current(),
         defaults: UserDefaults = .standard,
-        policy: TrustedHealthAlertPolicy = TrustedHealthAlertPolicy()
+        policy: TrustedHealthAlertPolicy = TrustedHealthAlertPolicy(),
+        notificationBuilder: TrustedHealthAlertNotificationBuilder =
+            TrustedHealthAlertNotificationBuilder()
     ) {
         self.notificationCenter = notificationCenter
         self.defaults = defaults
         self.policy = policy
+        self.notificationBuilder = notificationBuilder
         configuration = Self.loadConfiguration(from: defaults)
     }
 
@@ -225,28 +229,9 @@ actor TrustedHealthAlertController {
     ) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
         let isChinese = Locale.preferredLanguages.first?.hasPrefix("zh") == true
-        if event.triggers.contains(.thermalPressureCritical) {
-            content.title = isChinese ? "严重热压力" : "Critical thermal pressure"
-            content.body = combinedBody(
-                pressureText: isChinese
-                    ? "macOS 报告当前热压力为危急。"
-                    : "macOS reports critical thermal pressure.",
-                event: event,
-                isChinese: isChinese
-            )
-        } else if event.triggers.contains(.thermalPressureSerious) {
-            content.title = isChinese ? "热压力较高" : "High thermal pressure"
-            content.body = combinedBody(
-                pressureText: isChinese
-                    ? "macOS 报告当前热压力较高。"
-                    : "macOS reports serious thermal pressure.",
-                event: event,
-                isChinese: isChinese
-            )
-        } else {
-            content.title = isChinese ? "CPU 温度较高" : "High CPU temperature"
-            content.body = temperatureBody(for: event, isChinese: isChinese)
-        }
+        let payload = notificationBuilder.payload(for: event, isChinese: isChinese)
+        content.title = payload.title
+        content.body = payload.body
 
         content.sound = .default
         content.threadIdentifier = Self.notificationThreadIdentifier
@@ -263,36 +248,6 @@ actor TrustedHealthAlertController {
         }
         content.userInfo = userInfo
         return content
-    }
-
-    private func combinedBody(
-        pressureText: String,
-        event: TrustedHealthAlertEvent,
-        isChinese: Bool
-    ) -> String {
-        guard event.triggers.contains(.cpuTemperature) else {
-            return pressureText
-        }
-        return "\(pressureText) \(temperatureBody(for: event, isChinese: isChinese))"
-    }
-
-    private func temperatureBody(
-        for event: TrustedHealthAlertEvent,
-        isChinese: Bool
-    ) -> String {
-        guard let temperature = event.cpuTemperatureCelsius else {
-            return isChinese
-                ? "可信温度读数已超过你的阈值。"
-                : "A trusted temperature reading exceeded your threshold."
-        }
-        return String(
-            format: isChinese
-                ? "CPU 温度为 %.0f°C，已超过 %.0f°C 阈值。"
-                : "CPU temperature is %.0f°C, above your %.0f°C threshold.",
-            locale: Locale(identifier: isChinese ? "zh_CN" : "en_US_POSIX"),
-            temperature,
-            event.temperatureThresholdCelsius
-        )
     }
 
     private static func loadConfiguration(

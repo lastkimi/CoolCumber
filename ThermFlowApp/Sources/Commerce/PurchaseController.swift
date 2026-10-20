@@ -19,6 +19,11 @@ final class PurchaseController: ObservableObject {
     private let directCheckoutURL: URL?
     private let betaStartsAt: Date?
     private let betaExpiresAt: Date?
+    #if APPSTORE
+    private let appStoreStateMachine = AppStoreCommerceStateMachine(
+        lifetimeProductID: CommerceCatalog.lifetimeProProductID
+    )
+    #endif
 
     var displayPrice: String? { product?.displayPrice }
     var isProUnlocked: Bool { entitlement.unlocksPro }
@@ -78,10 +83,8 @@ final class PurchaseController: ObservableObject {
         )
         entitlement = .loading
 
-        #if BETA && !APPSTORE
-        refreshDirectBetaEntitlement()
-        #elseif BETA
-        entitlement = .betaUnlocked
+        #if BETA
+        refreshBetaEntitlement()
         #endif
 
         #if APPSTORE && !BETA
@@ -105,11 +108,8 @@ final class PurchaseController: ObservableObject {
     }
 
     func refresh() async {
-        #if BETA && !APPSTORE
-        refreshDirectBetaEntitlement()
-        #elseif BETA
-        entitlement = .betaUnlocked
-        activity = .idle
+        #if BETA
+        refreshBetaEntitlement()
         #elseif APPSTORE
         await refreshAppStoreEntitlement()
         #else
@@ -139,13 +139,14 @@ final class PurchaseController: ObservableObject {
         activity = .restoring
         do {
             try await AppStore.sync()
-            entitlement = await currentAppStoreEntitlement()
-            switch entitlement {
-            case .pro:
+            let resolution = await currentAppStoreEntitlementResolution()
+            entitlement = entitlementState(for: resolution)
+            switch appStoreStateMachine.restoreTransition(for: resolution) {
+            case .restored:
                 activity = .succeeded(message: "Your verified App Store Pro purchase was restored.")
-            case .unavailable(let reason):
+            case .verificationFailed(let reason):
                 activity = .failed(message: reason)
-            case .loading, .free, .betaUnlocked:
+            case .noVerifiedPurchase:
                 activity = .notice(message: "No verified Pro purchase was found for this Apple Account.")
             }
         } catch {
@@ -267,10 +268,10 @@ final class PurchaseController: ObservableObject {
         return formatter.date(from: trimmed)
     }
 
-    #if BETA && !APPSTORE
-    /// Direct previews fail closed unless the bundle contains a valid, bounded
+    #if BETA
+    /// Preview builds fail closed unless the bundle contains a valid, bounded
     /// `CoolCumberBetaStartsAt` / `CoolCumberBetaExpiresAt` ISO-8601 window.
-    private func refreshDirectBetaEntitlement(at evaluationDate: Date = Date()) {
+    private func refreshBetaEntitlement(at evaluationDate: Date = Date()) {
         betaExpirationTask?.cancel()
         betaExpirationTask = nil
 
@@ -282,7 +283,7 @@ final class PurchaseController: ObservableObject {
         case .active(let expiresAt):
             entitlement = .betaUnlocked
             activity = .idle
-            scheduleDirectBetaExpiration(at: expiresAt, relativeTo: evaluationDate)
+            scheduleBetaExpiration(at: expiresAt, relativeTo: evaluationDate)
 
         case .notStarted(let startsAt):
             entitlement = .free
@@ -299,18 +300,18 @@ final class PurchaseController: ObservableObject {
         case .invalidConfiguration:
             entitlement = .free
             activity = .notice(
-                message: "This Direct Beta build does not contain a valid preview access window."
+                message: "This Beta Preview build does not contain a valid preview access window."
             )
         }
     }
 
-    private func scheduleDirectBetaExpiration(
+    private func scheduleBetaExpiration(
         at expirationDate: Date,
         relativeTo evaluationDate: Date
     ) {
         let delay = expirationDate.timeIntervalSince(evaluationDate)
         guard delay.isFinite, delay > 0 else {
-            refreshDirectBetaEntitlement(at: evaluationDate)
+            refreshBetaEntitlement(at: evaluationDate)
             return
         }
         let nanoseconds = UInt64(min(delay * 1_000_000_000, Double(UInt64.max)))
@@ -321,7 +322,7 @@ final class PurchaseController: ObservableObject {
                 return
             }
             guard !Task.isCancelled else { return }
-            self?.refreshDirectBetaEntitlement()
+            self?.refreshBetaEntitlement()
         }
     }
     #endif
@@ -329,7 +330,7 @@ final class PurchaseController: ObservableObject {
     #if APPSTORE
     private func refreshAppStoreEntitlement() async {
         activity = .loadingProducts
-        entitlement = await currentAppStoreEntitlement()
+        entitlement = entitlementState(for: await currentAppStoreEntitlementResolution())
 
         do {
             product = try await loadAppStoreProduct()
@@ -361,30 +362,45 @@ final class PurchaseController: ObservableObject {
         return product
     }
 
-    private func currentAppStoreEntitlement() async -> EntitlementState {
-        var verificationFailure: String?
+    private func currentAppStoreEntitlementResolution(
+        additionalEvidence: [AppStoreTransactionEvidence] = []
+    ) async -> AppStoreEntitlementResolution {
+        var evidence = additionalEvidence
 
         for await result in Transaction.currentEntitlements {
             switch result {
             case .verified(let transaction):
-                guard transaction.productID == CommerceCatalog.lifetimeProProductID,
-                      transaction.revocationDate == nil else {
-                    continue
-                }
-                return .pro(source: .appStore)
+                evidence.append(
+                    .verified(
+                        productID: transaction.productID,
+                        isRevoked: transaction.revocationDate != nil
+                    )
+                )
 
             case .unverified(let transaction, let error):
-                guard transaction.productID == CommerceCatalog.lifetimeProProductID else {
-                    continue
-                }
-                verificationFailure = "The App Store Pro entitlement could not be verified: \(error.localizedDescription)"
+                evidence.append(
+                    .unverified(
+                        productID: transaction.productID,
+                        reason: "The App Store Pro entitlement could not be verified: \(error.localizedDescription)"
+                    )
+                )
             }
         }
 
-        if let verificationFailure {
-            return .unavailable(reason: verificationFailure)
+        return appStoreStateMachine.resolveEntitlement(from: evidence)
+    }
+
+    private func entitlementState(
+        for resolution: AppStoreEntitlementResolution
+    ) -> EntitlementState {
+        switch resolution {
+        case .free:
+            return .free
+        case .pro:
+            return .pro(source: .appStore)
+        case .unavailable(let reason):
+            return .unavailable(reason: reason)
         }
-        return .free
     }
 
     private func purchaseFromAppStore() async {
@@ -412,31 +428,69 @@ final class PurchaseController: ObservableObject {
         do {
             switch try await product.purchase() {
             case .success(.verified(let transaction)):
-                guard transaction.productID == CommerceCatalog.lifetimeProProductID,
-                      transaction.revocationDate == nil else {
-                    activity = .failed(message: "The verified transaction did not match the Pro lifetime product.")
-                    return
+                let transition = appStoreStateMachine.purchaseTransition(
+                    for: .verified(
+                        productID: transaction.productID,
+                        isRevoked: transaction.revocationDate != nil
+                    )
+                )
+                if transition.shouldFinishVerifiedTransaction {
+                    await transaction.finish()
                 }
-                await transaction.finish()
-                entitlement = .pro(source: .appStore)
-                activity = .succeeded(message: "Pro was unlocked by a verified App Store purchase.")
+                applyPurchaseTransition(transition)
 
-            case .success(.unverified(_, let error)):
-                let message = "The App Store could not verify this purchase: \(error.localizedDescription)"
-                entitlement = .unavailable(reason: message)
-                activity = .failed(message: message)
+            case .success(.unverified(let transaction, let error)):
+                applyPurchaseTransition(
+                    appStoreStateMachine.purchaseTransition(
+                        for: .unverified(
+                            productID: transaction.productID,
+                            reason: "The App Store could not verify this purchase: \(error.localizedDescription)"
+                        )
+                    )
+                )
 
             case .pending:
-                activity = .pending
+                applyPurchaseTransition(
+                    appStoreStateMachine.purchaseTransition(for: .pending)
+                )
 
             case .userCancelled:
-                activity = .cancelled
+                applyPurchaseTransition(
+                    appStoreStateMachine.purchaseTransition(for: .userCancelled)
+                )
 
             @unknown default:
-                activity = .failed(message: "The App Store returned an unknown purchase state.")
+                applyPurchaseTransition(
+                    appStoreStateMachine.purchaseTransition(for: .unknown)
+                )
             }
         } catch {
             activity = .failed(message: error.localizedDescription)
+        }
+    }
+
+    private func applyPurchaseTransition(_ transition: AppStorePurchaseTransition) {
+        switch transition {
+        case .unlockVerified:
+            entitlement = .pro(source: .appStore)
+            activity = .succeeded(message: "Pro was unlocked by a verified App Store purchase.")
+        case .rejectRevoked:
+            entitlement = .free
+            activity = .failed(message: "The verified App Store transaction has been revoked and cannot unlock Pro.")
+        case .rejectUnexpectedProduct:
+            entitlement = .unavailable(
+                reason: "The App Store transaction did not match the Pro lifetime product."
+            )
+            activity = .failed(message: "The App Store transaction did not match the Pro lifetime product.")
+        case .rejectUnverified(let reason):
+            entitlement = .unavailable(reason: reason)
+            activity = .failed(message: reason)
+        case .pending:
+            activity = .pending
+        case .cancelled:
+            activity = .cancelled
+        case .failedUnknown:
+            activity = .failed(message: "The App Store returned an unknown purchase state.")
         }
     }
 
@@ -446,19 +500,79 @@ final class PurchaseController: ObservableObject {
 
             switch result {
             case .verified(let transaction):
-                guard transaction.productID == CommerceCatalog.lifetimeProProductID else {
-                    continue
+                let evidence = AppStoreTransactionEvidence.verified(
+                    productID: transaction.productID,
+                    isRevoked: transaction.revocationDate != nil
+                )
+                let transition = appStoreStateMachine.transactionUpdateTransition(for: evidence)
+                switch transition {
+                case .refreshEntitlements(let shouldFinish, let wasRevoked):
+                    if shouldFinish {
+                        await transaction.finish()
+                    }
+                    // Include the update itself so a newly approved Ask to Buy
+                    // cannot remain visually pending while currentEntitlements
+                    // catches up to the verified transaction stream.
+                    let resolution = await currentAppStoreEntitlementResolution(
+                        additionalEvidence: [evidence]
+                    )
+                    entitlement = entitlementState(for: resolution)
+                    if wasRevoked {
+                        switch resolution {
+                        case .pro:
+                            activity = .notice(
+                                message: "An App Store transaction was revoked, but Pro remains active from separate verified entitlement evidence."
+                            )
+                        case .free:
+                            activity = .notice(
+                                message: "The App Store reported that the Pro purchase was revoked. Pro access was removed."
+                            )
+                        case .unavailable(let reason):
+                            activity = .failed(message: reason)
+                        }
+                    } else {
+                        switch resolution {
+                        case .pro:
+                            activity = .succeeded(
+                                message: "Pro was unlocked by a verified App Store purchase."
+                            )
+                        case .free:
+                            activity = .failed(
+                                message: "The verified App Store transaction did not produce an active Pro entitlement."
+                            )
+                        case .unavailable(let reason):
+                            activity = .failed(message: reason)
+                        }
+                    }
+                case .rejectUnverified, .ignore:
+                    break
                 }
-                await transaction.finish()
-                entitlement = await currentAppStoreEntitlement()
 
             case .unverified(let transaction, let error):
-                guard transaction.productID == CommerceCatalog.lifetimeProProductID else {
-                    continue
-                }
                 let message = "An App Store transaction could not be verified: \(error.localizedDescription)"
-                entitlement = .unavailable(reason: message)
-                activity = .failed(message: message)
+                let evidence = AppStoreTransactionEvidence.unverified(
+                    productID: transaction.productID,
+                    reason: message
+                )
+                switch appStoreStateMachine.transactionUpdateTransition(for: evidence) {
+                case .rejectUnverified:
+                    let resolution = await currentAppStoreEntitlementResolution(
+                        additionalEvidence: [evidence]
+                    )
+                    entitlement = entitlementState(for: resolution)
+                    switch resolution {
+                    case .pro:
+                        activity = .notice(
+                            message: "Pro remains active from separately verified App Store entitlement evidence."
+                        )
+                    case .free:
+                        activity = .failed(message: message)
+                    case .unavailable(let reason):
+                        activity = .failed(message: reason)
+                    }
+                case .refreshEntitlements, .ignore:
+                    break
+                }
             }
         }
     }

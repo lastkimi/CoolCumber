@@ -3,24 +3,22 @@ import SwiftUI
 import ThermFlowCore
 import WidgetKit
 
-fileprivate enum WidgetSnapshotState: String {
-    case current
-    case stale
-    case unavailable
-}
-
 private struct SharedSnapshotReader {
     static let appGroupIdentifier = "BSKR6CQ765.com.slmcamp.CoolCumber"
     static let relativeDirectory = "Library/Application Support/CoolCumber/Telemetry"
     static let fileName = "system-snapshot-v1.json"
-    static let maximumSnapshotAge: TimeInterval = 90
+    static let maximumSnapshotAge = WidgetSnapshotPolicy.defaultMaximumSnapshotAge
     static let maximumEncodedSnapshotSize = 1_048_576
-    static let maximumFanCount = 8
 
     let fileManager: FileManager
+    let snapshotPolicy: WidgetSnapshotPolicy
 
-    init(fileManager: FileManager = .default) {
+    init(
+        fileManager: FileManager = .default,
+        snapshotPolicy: WidgetSnapshotPolicy = WidgetSnapshotPolicy()
+    ) {
         self.fileManager = fileManager
+        self.snapshotPolicy = snapshotPolicy
     }
 
     func entry(at date: Date) -> SimpleEntry {
@@ -39,28 +37,14 @@ private struct SharedSnapshotReader {
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let snapshot = try? decoder.decode(SystemSnapshot.self, from: data),
-              snapshot.schemaVersion == SystemSnapshot.currentSchemaVersion,
-              snapshot.fans.count <= Self.maximumFanCount else {
+        guard let snapshot = try? decoder.decode(SystemSnapshot.self, from: data) else {
             return SimpleEntry(date: date, snapshot: nil, state: .unavailable)
         }
 
-        let age = date.timeIntervalSince(snapshot.capturedAt)
-        let snapshotIsFresh = age.isFinite
-            && age >= 0
-            && age <= Self.maximumSnapshotAge
-        let state: WidgetSnapshotState
-        if !snapshotIsFresh {
-            state = .stale
-        } else if containsUsableWidgetMetric(snapshot, at: date) {
-            state = .current
-        } else {
-            state = .unavailable
-        }
         return SimpleEntry(
             date: date,
             snapshot: snapshot,
-            state: state
+            state: snapshotPolicy.state(for: snapshot, at: date)
         )
     }
 
@@ -80,37 +64,6 @@ private struct SharedSnapshotReader {
         return data
     }
 
-    /// A fresh file is not enough to claim that telemetry is current. At
-    /// least one value the Widget can actually present must also be usable.
-    private func containsUsableWidgetMetric(
-        _ snapshot: SystemSnapshot,
-        at date: Date
-    ) -> Bool {
-        if snapshot.thermal.cpuTemperature.usableValue(
-            at: date,
-            maximumAge: Self.maximumSnapshotAge
-        ) != nil {
-            return true
-        }
-        if snapshot.thermal.pressure.usableValue(
-            at: date,
-            maximumAge: Self.maximumSnapshotAge
-        ) != nil {
-            return true
-        }
-        if snapshot.memory.usage.usableValue(
-            at: date,
-            maximumAge: Self.maximumSnapshotAge
-        ) != nil {
-            return true
-        }
-        return snapshot.fans.contains {
-            $0.currentSpeed.usableValue(
-                at: date,
-                maximumAge: Self.maximumSnapshotAge
-            ) != nil
-        }
-    }
 }
 
 struct Provider: TimelineProvider {
@@ -143,7 +96,7 @@ struct Provider: TimelineProvider {
 struct SimpleEntry: TimelineEntry {
     let date: Date
     fileprivate let snapshot: SystemSnapshot?
-    fileprivate let state: WidgetSnapshotState
+    let state: WidgetSnapshotState
 }
 
 struct CoolCumberWidgetEntryView: View {

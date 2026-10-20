@@ -1,0 +1,88 @@
+{
+  "assets" : [
+    {
+      "capturedAtUnix" : 1792466664.9879999,
+      "file" : "01-overview-en.png",
+      "locale" : "en-US",
+      "md5" : "95f882df68f7016104995efd3909e1c1",
+      "page" : "overview",
+      "rawAttachment" : "207F329B-D759-4E72-98B5-B7689C110A02.png",
+      "rawSHA256" : "5eff8d76293b6498e8056b496b7d5b655caa6d8e0d2583d9ed2efca052d40dcb",
+      "sha256" : "f57f55ce6a1f062927644e72e3c234e26c03f4daef55c77dc72ca7bf2cdb997e",
+      "testIdentifier" : "StoreScreenshots\/test01EnglishOverview()"
+    },
+    {
+      "capturedAtUnix" : 1792466690.1040001,
+      "file" : "02-history-en.png",
+      "locale" : "en-US",
+      "md5" : "f48e4d85f874fc3281e5cf1b0f005446",
+      "page" : "history",
+      "rawAttachment" : "D0C8430C-7E48-4CA0-A94A-6E698EBEB143.png",
+      "rawSHA256" : "0281d29f62f02632b0f89b7ebad5a896e4df79ad20064bceebc6dc601135efea",
+      "sha256" : "263486ab0f9d55be2ad28bfe3ef474f14819696f1fbd378794c0b8b89fde6b7a",
+      "testIdentifier" : "StoreScreenshots\/test02EnglishHistory()"
+    },
+    {
+      "capturedAtUnix" : 1792466726.7320001,
+      "file" : "03-pro-en.png",
+      "locale" : "en-US",
+      "md5" : "f20d6c6c08dee3febd800cb4008fdbfe",
+      "page" : "pro",
+      "rawAttachment" : "900E63EE-C320-477B-A3B2-136AE4E3C6FA.png",
+      "rawSHA256" : "0433450a97fe9b8867481e590cf84be5917bd2242ff890ec584f0b22597c449d",
+      "sha256" : "ccdd5708e7e335155c09733cd56e7caf02e32ddba56c1fc4aa2c79e111aead5a",
+      "testIdentifier" : "StoreScreenshots\/test03EnglishPro()"
+    },
+    {
+      "capturedAtUnix" : 1792466758.9419999,
+      "file" : "01-overview-zh.png",
+      "locale" : "zh-Hans",
+      "md5" : "2aa8d417e2c0748e2d384d9207c991b8",
+      "page" : "overview",
+      "rawAttachment" : "DA27E9E4-833E-4C76-A0DA-732613355B8A.png",
+      "rawSHA256" : "aa9dbacaf15f18b2d49bbe5ea5ac0d62abf0a3b5cd4b97d6f022efafef5fb731",
+      "sha256" : "75feaeb71b2951b46baddf2c799160b174e34909b442a69e4c84e64d75f0135e",
+      "testIdentifier" : "StoreScreenshots\/test04ChineseOverview()"
+    },
+    {
+      "capturedAtUnix" : 1792466792.1800001,
+      "file" : "02-history-zh.png",
+      "locale" : "zh-Hans",
+      "md5" : "af8d168afe583ab79b799d6f4e050596",
+      "page" : "history",
+      "rawAttachment" : "7AD31AA5-E5A4-408F-900B-32A191CFAC8F.png",
+      "rawSHA256" : "3703c3ad882355f69487186fc69251960d90c8582a1132b05f4705a996f56730",
+      "sha256" : "19bd34e0d224def8c44030bc51a73a1f1efe50cf805f9cbd957b364c76c54330",
+      "testIdentifier" : "StoreScreenshots\/test05ChineseHistory()"
+    },
+    {
+      "capturedAtUnix" : 1792466827.9749999,
+      "file" : "03-pro-zh.png",
+      "locale" : "zh-Hans",
+      "md5" : "b0e9bd304dc7b82982d85d3508be155d",
+      "page" : "pro",
+      "rawAttachment" : "6EEE8D13-FC24-4C38-8E8D-815B34516A57.png",
+      "rawSHA256" : "f972a0f777b31fb8198bb413bef77dd72452add02a452229b3dbc08766fb1b86",
+      "sha256" : "acbacc5e7f2cca2897cf87856e5df1c126df2fff719551693b40f969f75e2dcc",
+      "testIdentifier" : "StoreScreenshots\/test06ChinesePro()"
+    }
+  ],
+  "baseCommit" : "df0b9745abab400a396b7904ca81e748415af037",
+  "build" : "5",
+  "captureConfiguration" : "Release",
+  "captureLog" : "coolcumber-build5-production-ui.log (private release evidence)",
+  "captureScheme" : "CoolCumberProductionValidation",
+  "captureTarget" : "ThermFlowAppStore",
+  "priceEvidence" : "Rendered by StoreKit in Release; no local test configuration. Not a claim of a production purchase.",
+  "processing" : "Only composite transparency against neutral window background and encode opaque sRGB PNG; no crop, resize, overlays, prices or telemetry changes.",
+  "productVersion" : "1.2.0",
+  "requirements" : {
+    "alpha" : false,
+    "format" : "PNG RGB",
+    "height" : 1600,
+    "width" : 2560
+  },
+  "resultBundle" : "CoolCumber-build5-production-ui.xcresult (private release evidence)",
+  "schemaVersion" : 1,
+  "testSummary" : "6 passed, 0 failed, 0 skipped"
+}

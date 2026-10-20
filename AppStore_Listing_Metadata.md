@@ -1,8 +1,12 @@
 # CoolCumber 1.2 — App Store Connect metadata
 
-This file is the release source of truth. It intentionally describes only the
-sandboxed Mac App Store product and the features present in the submitted
-binary.
+This file records release identities for the sandboxed Mac App Store product.
+Version 1.2.0 build 4 is reserved for the free TestFlight Beta; it is not the
+paid production upload. On 20 October 2026 the owner explicitly instructed a
+direct production and US$19.99 Pro launch without waiting for external Beta
+feedback. Build 5 is the formal Release candidate. Its archive, screenshots,
+checksums and provider status must be recorded from that exact candidate;
+this document alone is not evidence of public availability.
 
 ## App information
 
@@ -12,9 +16,11 @@ binary.
 - SKU: `COOLCUMBER_001`
 - Primary category: Utilities
 - Version: `1.2.0`
-- Build: `3`
+- Limited free Beta build: `4`
+- Formal production candidate build: `5` (provider status is recorded separately)
 - Copyright: `© 2026 Hangzhou Inkblaze AI Technology Co., Ltd.`
-- Price: Free with In-App Purchase
+- Beta price: Free; Beta access is temporary and creates no purchase
+- Planned production price: Free with In-App Purchase
 - Marketing URL: `https://github.com/lastkimi/CoolCumber`
 - Support URL: `https://github.com/lastkimi/CoolCumber/issues`
 - Privacy policy URL: `https://github.com/lastkimi/CoolCumber/blob/master/PRIVACY.md`
@@ -26,8 +32,11 @@ binary.
 - Product ID: `com.slmcamp.CoolCumber.pro.lifetime`
 - Type: Non-consumable
 - Launch base price: US$19.99; StoreKit displays the localized storefront price
-- Includes: up to 30 days of on-device history, configurable local alerts based
-  on fresh available readings, and CSV history export
+- Release boundary: purchase and restore are disabled in build-4 Beta; the IAP
+  is planned for the later paid production build only
+- Includes: up to 30 days of on-device history, opt-in local alerts based only
+  on fresh serious or critical thermal pressure reported by macOS, and CSV
+  history export
 - Free remains usable with live monitoring and up to 24 hours of local history
 
 ## English metadata
@@ -47,7 +56,7 @@ See what your Mac can actually report. CoolCumber marks stale and unsupported re
 Keywords:
 
 ```text
-mac monitor,thermal,cpu,memory,battery,menu bar,widget,history,temperature,health
+mac monitor,thermal pressure,cpu,memory,battery,menu bar,widget,history,health
 ```
 
 Description:
@@ -56,7 +65,7 @@ Description:
 CoolCumber is a quiet, local-first Mac health monitor built around trustworthy data.
 
 LIVE HEALTH OVERVIEW
-• See CPU load, memory use, macOS thermal pressure, storage, battery health, and supported sensor readings.
+• See CPU load, memory use, macOS thermal pressure, storage, and battery health.
 • Every reading includes an explicit available, stale, unsupported, or temporarily unavailable state.
 • No simulated temperatures and no fake “healthy” defaults.
 
@@ -67,14 +76,14 @@ MADE FOR THE MENU BAR
 
 LOCAL HISTORY AND ALERTS
 • Free includes up to 24 hours of compact on-device history.
-• CoolCumber Pro adds up to 30 days of history, configurable local alerts based only on fresh verified readings, and CSV export.
+• CoolCumber Pro adds up to 30 days of history, opt-in local alerts based only on fresh serious or critical thermal pressure reported by macOS, and CSV export.
 
 PRIVATE BY DESIGN
 • No advertising or third-party analytics.
 • Monitoring data and history stay on your Mac.
 • The Mac App Store edition is sandboxed and never installs a privileged helper.
 
-Some low-level temperature and fan sensors are not exposed to sandboxed apps. CoolCumber shows them as unavailable instead of estimating them. Unsupported hardware controls are never sold as Pro features.
+This Mac App Store build does not provide CPU/GPU temperature or fan-speed readings. CoolCumber shows them as unsupported instead of estimating them; macOS thermal pressure remains available. Unsupported hardware controls are never sold as Pro features.
 ```
 
 ## Simplified Chinese metadata
@@ -94,7 +103,7 @@ Promotional text:
 Keywords:
 
 ```text
-Mac监控,系统热压力,CPU,内存,电池,菜单栏,小组件,历史,温度,健康
+Mac监控,系统热压力,CPU,内存,电池,菜单栏,小组件,历史,健康
 ```
 
 Description:
@@ -103,7 +112,7 @@ Description:
 CoolCumber 是一款安静、本地优先，并以数据可信为核心的 Mac 健康监测工具。
 
 可信健康概览
-• 查看 CPU 负载、内存占用、macOS 系统热压力、存储、电池健康和受支持的传感器读数。
+• 查看 CPU 负载、内存占用、macOS 系统热压力、存储和电池健康。
 • 每项数据都会明确显示为可用、已过期、不支持或暂时不可用。
 • 不模拟温度，也不用虚假的“正常值”填补空白。
 
@@ -114,14 +123,14 @@ CoolCumber 是一款安静、本地优先，并以数据可信为核心的 Mac �
 
 本地历史与提醒
 • Free 包含最长 24 小时的紧凑本地历史。
-• CoolCumber Pro 增加最长 30 天历史、仅基于新鲜可信读数的本地提醒，以及 CSV 导出。
+• CoolCumber Pro 增加最长 30 天历史、仅基于 macOS 新鲜“严重”或“危急”热压力读数的本地提醒，以及 CSV 导出。
 
 隐私优先
 • 不含广告或第三方分析。
 • 监测数据和历史只保留在 Mac 本机。
 • Mac App Store 版严格运行在沙盒中，绝不安装特权辅助组件。
 
-沙盒 App 无法读取部分底层温度或风扇传感器。CoolCumber 会显示“不可用”，而不是进行估算；不支持的硬件控制不会作为 Pro 功能销售。
+此 Mac App Store 构建不提供 CPU/GPU 温度或风扇转速读数。CoolCumber 会将它们标记为“不支持”，而不是进行估算；macOS 系统热压力仍可用。不支持的硬件控制不会作为 Pro 功能销售。
 ```
 
 ## Privacy answers
@@ -129,15 +138,28 @@ CoolCumber 是一款安静、本地优先，并以数据可信为核心的 Mac �
 - Data collection: No data collected
 - Tracking: No
 - Third-party advertising/analytics: No
-- Network access in the submitted Mac App Store binary: No client entitlement
+- Network access in the Mac App Store candidate: No client entitlement
 - Local notifications: Requested only after the user explicitly enables alerts
-- Local history: 24 hours Free / 30 days Pro, bounded and removable with the app
+- Local history: 24 hours Free / 30 days Pro or Beta Preview, bounded and
+  removable with the app
 
-## Limited TestFlight Beta
+## External Beta status
+
+No external TestFlight beta was conducted for build 3: the app had zero beta
+groups and zero testers, so there is no external beta-user feedback to cite.
+Build 4 was uploaded and separately submitted for TestFlight Beta review on
+20 October 2026. The owner subsequently chose direct production launch; no
+external testers, sessions or feedback are claimed. The historical limited
+Beta plan below is not a prerequisite for production release.
+
+### Proposed limited TestFlight Beta
 
 Group: `CoolCumber 1.2 Limited Beta`
 
 Public-link limit: `25` testers
+
+Distribution: private invitations or an unlisted link shared directly with the
+small test group; do not post the link publicly
 
 English description:
 
@@ -148,7 +170,7 @@ Help validate a quiet, local-first Mac health monitor. This preview focuses on t
 English What to Test:
 
 ```text
-Please compare the menu-bar summary, dashboard, history, and Widget after several refreshes. Check that missing or old readings are visibly unavailable or stale, alerts only use fresh readings, and CSV export opens safely in a spreadsheet. On Intel Macs, please also report whether optional read-only sensor setup succeeds.
+Please compare the menu-bar summary, dashboard, history, and Widget after several refreshes. Check that missing or old readings are visibly unavailable or stale, alerts only use fresh serious or critical thermal pressure reported by macOS, and CSV export opens safely in a spreadsheet. On Intel Macs, confirm that temperature and fan readings remain explicitly unsupported in the sandboxed App Store edition.
 ```
 
 Simplified Chinese description:
@@ -160,24 +182,93 @@ Simplified Chinese description:
 Simplified Chinese What to Test:
 
 ```text
-请在多次刷新后对比菜单栏、主窗口、历史和小组件；确认缺失或过期读数明确显示为不可用或已过期，提醒只使用新鲜读数，CSV 可安全地用表格软件打开。Intel Mac 用户也请反馈可选的只读传感器设置是否成功。
+请在多次刷新后对比菜单栏、主窗口、历史和小组件；确认缺失或过期读数明确显示为不可用或已过期，提醒只使用 macOS 报告的新鲜“严重”或“危急”热压力，CSV 可安全地用表格软件打开。Intel Mac 用户请确认沙盒 App Store 版会把温度和风扇读数明确显示为“不支持”。
 ```
 
-## Review notes
+Build-4 Beta access temporarily unlocks eligible Pro features for evaluation.
+It disables purchase and restore, creates no receipt or permanent entitlement,
+and must not be attached to the paid App Store submission.
+
+### Direct-launch decision and remaining release gates
+
+The owner explicitly removed external-feedback, tester-count, session-count
+and observation-duration prerequisites on 20 October 2026. Production need
+not wait for the build-4 TestFlight review or an external test cohort.
+
+- No unresolved P0 or P1 defect, including launch/signature failures, misleading
+  sensor values, privacy regressions, history loss or incorrect paid access.
+- Deterministic data/commerce tests, real visible-window checks and universal
+  Intel/Apple-silicon builds must pass with source and result evidence.
+- The exact Release candidate must be signed and validated; Direct must also
+  be notarized. The paid build must not contain Beta access or StoreKit fixtures.
+- Store metadata, real screenshots, non-consumable price, purchase/restore and
+  first-IAP review association must be checked without fabricated transactions.
+- Apple approval and account eligibility remain required for paid availability.
+
+Local automation and StoreKit fixtures are internal validation, not external
+testers, installations or revenue. No production purchase can be claimed until
+one is observed; the owner decision does not waive platform requirements.
+
+## Limited Beta review notes — build 4
 
 ```text
+Version 1.2.0 build 4 is a small, free TestFlight Beta candidate, not the paid production upload. Beta Preview temporarily enables eligible history, alert and CSV features for testing; purchase and restore are disabled and no receipt or permanent license is created.
+
+The optional screen-positioned SmartBar and all display-cutout geometry derived from the previously disclosed SuperIsland reference (https://github.com/shobhit99/SuperIsland) have been removed. Every supported Mac now uses the standard AppKit menu-bar status item and popover as the primary entry point.
+
 CoolCumber intentionally shows unsupported or unavailable sensor readings as such. The Mac App Store binary is sandboxed, contains no privileged helper, and has no network-client entitlement.
 
-The first non-consumable IAP is CoolCumber Pro Lifetime (com.slmcamp.CoolCumber.pro.lifetime). Free includes live monitoring and 24-hour local history. Pro adds 30-day local history, local threshold alerts, and CSV export. No fan, SMC, process, file-cleaning, or battery-control capability is sold by this IAP.
+To review: launch the app with no account, use the menu-bar cucumber to open CoolCumber, and inspect the source/time/status below each metric. CPU/GPU temperature and fan speed remain explicitly unsupported in this sandboxed edition. Open Activity for CPU, memory and storage use. Open History to verify temporary 30-day Beta access, the opt-in alert for fresh serious or critical thermal pressure reported by macOS, and CSV export. Open Pro to verify that Beta is identified as temporary evaluation access rather than a purchase.
 
-To review: open Settings > Pro, purchase or restore the product, then open History to verify the 30-day label, alert settings, and Export CSV action. The purchase state changes only after StoreKit returns a verified transaction.
+Validation boundary: 103 deterministic ThermFlowCore tests passed. Build 3 had no external TestFlight group or testers; no external beta feedback is claimed. Build-4 external testing must be reported only after App Store Connect provides evidence that it occurred.
 ```
 
-## Required release assets
+## Production build-5 evidence — 20 October 2026
 
-- Real English and Simplified Chinese screenshots captured from build 3
-- A real IAP review screenshot showing the Pro paywall and implemented benefits
+- Exact archive source: `df0b9745abab400a396b7904ca81e748415af037`.
+- Mac App Store Release archive and distribution package sealed and validated.
+- 103 deterministic core tests passed; six bilingual visible-window optimized
+  Release tests passed, with no failures or skips.
+- CI for the exact source completed successfully across all six jobs,
+  including universal Debug/Beta/Release builds in both channels.
+- The real Release Pro sheet displayed the StoreKit-returned `$19.99` price,
+  Restore and implemented benefits, with no local StoreKit configuration.
+  This is product-loading/UI evidence, not a production purchase or revenue.
+- Production submission and public paid availability must be confirmed from
+  App Store Connect; neither upload nor this file alone establishes approval.
+
+## Paid App Review notes — build 5
+
+These describe the existing build-5 Release candidate. Provider submission
+receipts remain separate from this source document.
+
+```text
+The first non-consumable IAP is CoolCumber Pro Lifetime (com.slmcamp.CoolCumber.pro.lifetime). Free includes live monitoring and 24-hour local history. Pro adds 30-day local history, opt-in local alerts for fresh serious or critical thermal pressure reported by macOS, and CSV export. No fan, SMC, process, file-cleaning, battery-control, or temperature-threshold capability is sold by this IAP.
+
+To review build 5: open View Pro in the main toolbar or Settings > View lifetime Pro, verify the localized price returned by StoreKit, and purchase or restore the product. Then open History to verify the 30-day label, thermal-pressure alert setting, and Export CSV action. The purchase state changes only after StoreKit returns a verified matching, non-revoked transaction. The candidate has no temporary Beta access and no local StoreKit fixture.
+```
+
+## Required paid-release assets — build 5
+
+- Three real English and three real Simplified Chinese screenshots captured
+  from the visible, optimized build-5 candidate: Overview, History, and Pro
+- A fresh IAP review screenshot showing the StoreKit-returned storefront
+  price, Restore, and all implemented benefits
 - Public support URL and public HTTPS privacy-policy URL
 - App Review contact details in App Store Connect
 
-Do not reuse the repository's legacy concept images as product screenshots.
+The old build-4 Debug purchase screenshots are local visual-QA drafts, not
+canonical Beta assets and not paid build-5 release evidence. Do not commit or
+upload them as the paid submission. After the exact paid candidate is committed,
+capture fresh Release assets and validate them with explicit version, build, and source
+commit arguments:
+
+```bash
+Scripts/validate-store-screenshots.sh AppStore_Screenshots \
+  --expected-version 1.2.0 \
+  --expected-build 5 \
+  --expected-source-commit FULL_40_CHARACTER_CAPTURE_SOURCE_COMMIT
+```
+
+Do not reuse legacy concept images or a local StoreKit test-configuration price
+as proof of the production storefront price.

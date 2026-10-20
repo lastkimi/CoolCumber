@@ -11,13 +11,49 @@ readonly RELEASE_APP_GROUP='BSKR6CQ765.com.slmcamp.CoolCumber'
 readonly RELEASE_HELPER_SERVICE_ID='com.slmcamp.CoolCumber.helper.v2'
 readonly RELEASE_HELPER_EXECUTABLE_NAME='com.slmcamp.CoolCumber.helper.v2'
 readonly RELEASE_HELPER_PLIST_NAME='com.slmcamp.CoolCumber.helper.v2.plist'
-readonly RELEASE_BETA_STARTS_AT='2026-08-20T00:00:00Z'
-readonly RELEASE_BETA_EXPIRES_AT='2026-09-30T00:00:00Z'
+readonly RELEASE_BETA_STARTS_AT='2026-10-20T00:00:00Z'
+readonly RELEASE_BETA_EXPIRES_AT='2026-12-04T00:00:00Z'
+readonly RELEASE_SEQUENCE_VERSION='1.2.0'
+readonly RELEASE_LIMITED_BETA_BUILD='4'
+readonly RELEASE_MINIMUM_PRODUCTION_BUILD='5'
+
+release_require_channel_build_sequence() {
+    local configuration="$1"
+    local version="$2"
+    local build_number="$3"
+
+    # Build 4 is reserved for the small, free Beta. It must never be uploaded
+    # as the production binary. The US$19.99 Pro submission starts at a unique,
+    # strictly higher build number. External feedback is not a release gate
+    # under the owner's 2026-10-20 direct-launch instruction.
+    if [ "$version" = "$RELEASE_SEQUENCE_VERSION" ]; then
+        case "$configuration" in
+            Beta)
+                if [ "$build_number" != "$RELEASE_LIMITED_BETA_BUILD" ]; then
+                    printf '%s %s Beta must use the reserved limited-Beta build %s; got %s.\n' \
+                        "$RELEASE_PRODUCT_NAME" "$version" "$RELEASE_LIMITED_BETA_BUILD" "$build_number" >&2
+                    return 64
+                fi
+                ;;
+            Release)
+                if [ "$build_number" -lt "$RELEASE_MINIMUM_PRODUCTION_BUILD" ]; then
+                    printf '%s %s production Release must use build %s or later; build %s is Beta-only.\n' \
+                        "$RELEASE_PRODUCT_NAME" "$version" "$RELEASE_MINIMUM_PRODUCTION_BUILD" "$build_number" >&2
+                    return 64
+                fi
+                ;;
+            *)
+                printf 'Unsupported release configuration: %s\n' "$configuration" >&2
+                return 64
+                ;;
+        esac
+    fi
+}
 
 release_require_explicit_source_commit() {
     local expected_commit="$1"
     local actual_commit
-    local tracked_changes
+    local worktree_changes
 
     if ! [[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]]; then
         printf '%s\n' '--source-commit must be the full, lowercase 40-character HEAD commit.' >&2
@@ -31,12 +67,40 @@ release_require_explicit_source_commit() {
         return 1
     fi
 
-    tracked_changes="$(git status --porcelain=v1 --untracked-files=no)"
-    if [ -n "$tracked_changes" ]; then
-        printf '%s\n' 'Release builds require a clean tracked worktree and index.' >&2
-        printf '%s\n' 'Commit or restore tracked changes before creating release artifacts.' >&2
+    # XcodeGen discovers source and resource files from directory trees. An
+    # untracked Swift or resource file can therefore enter a binary even when
+    # every tracked file matches HEAD. Require all non-ignored inputs to be
+    # committed so the manifest's sourceCommit describes the complete build.
+    worktree_changes="$(git status --porcelain=v1 --untracked-files=all)"
+    if [ -n "$worktree_changes" ]; then
+        printf '%s\n' 'Release builds require a completely clean worktree and index.' >&2
+        printf '%s\n' 'Commit or remove all tracked and untracked non-ignored inputs before creating release artifacts.' >&2
         return 1
     fi
+
+    # Ignored credentials and generated artifacts normally stay invisible to
+    # `git status`. They must still never appear inside a recursively discovered
+    # XcodeGen source/resource tree. Every file or symlink that can affect the
+    # app binary must be represented by sourceCommit.
+    local build_input
+    local build_input_roots=(
+        project.yml
+        ThermFlowApp
+        ThermFlowWidget
+        ThermFlowDaemon
+        Packages/ThermFlowCore/Package.swift
+        Packages/ThermFlowCore/Sources
+    )
+    while IFS= read -r -d '' build_input; do
+        if [ -L "$build_input" ]; then
+            printf 'Release build inputs must not be symbolic links: %s\n' "$build_input" >&2
+            return 1
+        fi
+        if ! git ls-files --error-unmatch -- "$build_input" > /dev/null 2>&1; then
+            printf 'Release build input is not tracked by sourceCommit: %s\n' "$build_input" >&2
+            return 1
+        fi
+    done < <(find "${build_input_roots[@]}" \( -type f -o -type l \) -print0)
 }
 
 release_sha256() {

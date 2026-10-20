@@ -48,8 +48,8 @@ enum ProFeature: String, CaseIterable, Identifiable, Sendable {
                 : "Keeps up to 30 days of compact history on this Mac instead of the Free 24-hour window."
         case .advancedAlerts:
             return isChinese
-                ? "只基于应用能够验证的新鲜读数提供可配置本地提醒。"
-                : "Adds configurable local alerts based only on fresh readings the app can verify."
+                ? "基于当前版本支持的新鲜可信健康信号，提供由用户主动开启的本地提醒。"
+                : "Adds opt-in local alerts from fresh, trusted health signals supported by this edition."
         case .historyExport:
             return isChinese
                 ? "将本机现有历史导出为防表格公式注入的 CSV 文件。"

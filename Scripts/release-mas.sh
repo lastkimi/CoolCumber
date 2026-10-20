@@ -16,9 +16,9 @@ usage() {
 Build and seal a Mac App Store release (never uploads):
   Scripts/release-mas.sh \
     --output-dir /absolute/path \
-    --channel Release|Beta \
+    --channel Beta \
     --version 1.2.0 \
-    --build 3 \
+    --build 4 \
     --team-id TEAM_ID \
     --source-commit FULL_40_CHARACTER_HEAD
 
@@ -41,6 +41,9 @@ Both modes require App Store Connect API authentication:
 Upload mode uses Xcode's supported app-store-connect export with
 destination=upload. It reuses the sealed xcarchive bound into the manifest;
 it does not invoke xcodegen, archive, build, altool, or Transporter.
+
+Release sequence for version 1.2.0:
+  Beta uses build 4 only. Production Release uses build 5 or later.
 USAGE
 }
 
@@ -113,6 +116,7 @@ validate_release_values() {
         printf '%s\n' 'Version, build, or Team ID has an invalid format.' >&2
         exit 64
     fi
+    release_require_channel_build_sequence "$channel" "$version" "$build_number"
 }
 
 validate_asc_key() {
@@ -161,6 +165,7 @@ validate_asc_key() {
 validate_output_directory() {
     local candidate="$1"
     local require_empty="$2"
+    local allow_build_cache="${3:-0}"
 
     candidate="$(absolute_from_invocation "$candidate")"
     if [ "$candidate" = '/' ] || [ "$candidate" = "${HOME:-}" ]; then
@@ -178,8 +183,16 @@ validate_output_directory() {
         fi
         if [ "$require_empty" -eq 1 ] &&
            [ -n "$(find "$candidate" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
-            printf 'Output directory must be empty: %s\n' "$candidate" >&2
-            exit 1
+            # An interrupted build may leave only Xcode's replaceable cache.
+            # Never reuse a directory containing an archive, package, manifest,
+            # upload receipt, or any other artifact. Upload mode stays empty-only.
+            if [ "$allow_build_cache" -ne 1 ] ||
+               [ ! -d "$candidate/DerivedData" ] ||
+               [ -L "$candidate/DerivedData" ] ||
+               [ -n "$(find "$candidate" -mindepth 1 -maxdepth 1 ! -name DerivedData -print -quit)" ]; then
+                printf 'Output directory must be empty or contain only an interrupted build cache: %s\n' "$candidate" >&2
+                exit 1
+            fi
         fi
     else
         mkdir -p "$candidate"
@@ -261,6 +274,7 @@ if [ -n "$upload_archive" ]; then
 
     "$script_directory/validate-mas-pkg.sh" \
         --pkg "$reviewed_pkg" \
+        --configuration "$channel" \
         --version "$version" \
         --build "$build_number" \
         --team-id "$team_id"
@@ -280,6 +294,8 @@ if [ -n "$upload_archive" ]; then
     archived_app="$archive_path/Products/Applications/$RELEASE_PRODUCT_NAME.app"
     "$script_directory/validate-mas-pkg.sh" \
         --app "$archived_app" \
+        --configuration "$channel" \
+        --allow-development-archive \
         --version "$version" \
         --build "$build_number" \
         --team-id "$team_id"
@@ -343,12 +359,13 @@ case "$MAS_APP_SIGNING_IDENTITY" in
         exit 64
         ;;
 esac
-if ! security find-identity -v -p codesigning | grep -F -q "$MAS_APP_SIGNING_IDENTITY"; then
+installed_signing_identities="$(security find-identity -v -p codesigning)"
+if ! grep -F -q "$MAS_APP_SIGNING_IDENTITY" <<< "$installed_signing_identities"; then
     printf '%s\n' 'The requested Mac App Store signing identity is not installed.' >&2
     exit 1
 fi
 
-output_dir="$(validate_output_directory "$output_dir" 1)"
+output_dir="$(validate_output_directory "$output_dir" 1 1)"
 "$script_directory/check-project-boundaries.rb" "$repo_root/project.yml" "$version" "$build_number"
 xcodegen generate --spec "$repo_root/project.yml"
 
@@ -363,7 +380,10 @@ manifest_path="$output_dir/release-manifest.json"
 build_settings=(
     "DEVELOPMENT_TEAM=$team_id"
     'CODE_SIGN_STYLE=Automatic'
-    "CODE_SIGN_IDENTITY=$MAS_APP_SIGNING_IDENTITY"
+    # Xcode automatic archives use development signing. Export re-signs the
+    # reviewed package for distribution; the package gate stays strict.
+    'CODE_SIGN_IDENTITY=Apple Development'
+    'COOLCUMBER_WIDGET_ENTITLEMENTS=ThermFlowWidget/AppStore.entitlements'
     "MARKETING_VERSION=$version"
     "CURRENT_PROJECT_VERSION=$build_number"
 )
@@ -382,6 +402,8 @@ xcodebuild \
 archived_app="$archive_path/Products/Applications/$RELEASE_PRODUCT_NAME.app"
 "$script_directory/validate-mas-pkg.sh" \
     --app "$archived_app" \
+    --configuration "$channel" \
+    --allow-development-archive \
     --version "$version" \
     --build "$build_number" \
     --team-id "$team_id"
@@ -390,6 +412,7 @@ plutil -create xml1 "$export_options"
 plutil -insert method -string app-store-connect "$export_options"
 plutil -insert destination -string export "$export_options"
 plutil -insert signingStyle -string automatic "$export_options"
+plutil -insert signingCertificate -string "$MAS_APP_SIGNING_IDENTITY" "$export_options"
 plutil -insert teamID -string "$team_id" "$export_options"
 plutil -insert stripSwiftSymbols -bool true "$export_options"
 plutil -insert uploadSymbols -bool true "$export_options"
@@ -413,6 +436,7 @@ mv "$(sed -n '1p' "$packages_file")" "$pkg_path"
 
 "$script_directory/validate-mas-pkg.sh" \
     --pkg "$pkg_path" \
+    --configuration "$channel" \
     --version "$version" \
     --build "$build_number" \
     --team-id "$team_id"
@@ -432,6 +456,8 @@ fi
 sealed_archive="$(sed -n '1p' "$sealed_archives_file")"
 "$script_directory/validate-mas-pkg.sh" \
     --app "$sealed_archive/Products/Applications/$RELEASE_PRODUCT_NAME.app" \
+    --configuration "$channel" \
+    --allow-development-archive \
     --version "$version" \
     --build "$build_number" \
     --team-id "$team_id"

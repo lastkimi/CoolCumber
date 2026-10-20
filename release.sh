@@ -15,9 +15,9 @@ usage() {
 Usage:
   ./release.sh \
     --output-dir /absolute/path \
-    --channel Release|Beta \
+    --channel Beta \
     --version 1.2.0 \
-    --build 3 \
+    --build 4 \
     --team-id TEAM_ID \
     --source-commit FULL_40_CHARACTER_HEAD \
     [--notary-profile KEYCHAIN_PROFILE] \
@@ -37,6 +37,9 @@ The Mac App Store pkg is exported by Xcode with app-store-connect automatic
 signing; no local installer identity is required. This command produces local
 Direct and Mac App Store release artifacts. It does not upload to GitHub or
 submit anything to App Store Connect.
+
+Release sequence for version 1.2.0:
+  Beta uses build 4 only. Production Release uses build 5 or later.
 USAGE
 }
 
@@ -138,6 +141,7 @@ if ! [[ "$notary_timeout" =~ ^[1-9][0-9]*[smh]?$ ]]; then
     printf '%s\n' '--notary-timeout must be a positive duration such as 30m.' >&2
     exit 64
 fi
+release_require_channel_build_sequence "$channel" "$version" "$build_number"
 release_require_explicit_source_commit "$source_commit"
 
 if [ -n "${APPLE_ID:-}" ] || [ -n "${APP_SPECIFIC_PASSWORD:-}" ]; then

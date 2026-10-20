@@ -15,9 +15,9 @@ usage() {
 Usage:
   Scripts/release-direct.sh \
     --output-dir /absolute/path \
-    --channel Release|Beta \
+    --channel Beta \
     --version 1.2.0 \
-    --build 3 \
+    --build 4 \
     --team-id TEAM_ID \
     --source-commit FULL_40_CHARACTER_HEAD \
     --mas-app /path/to/CoolCumber.app \
@@ -34,6 +34,9 @@ Notary authentication must use exactly one method:
 
 This command creates and validates local artifacts. It never creates or replaces
 a GitHub Release.
+
+Release sequence for version 1.2.0:
+  Beta uses build 4 only. Production Release uses build 5 or later.
 USAGE
 }
 
@@ -154,6 +157,7 @@ case "$DIRECT_APP_SIGNING_IDENTITY" in
         exit 64
         ;;
 esac
+release_require_channel_build_sequence "$channel" "$version" "$build_number"
 
 if [ -n "${APPLE_ID:-}" ] || [ -n "${APP_SPECIFIC_PASSWORD:-}" ]; then
     printf '%s\n' 'Legacy Apple-ID password credentials are not accepted; use an API key or keychain profile.' >&2
@@ -226,8 +230,11 @@ if [ -e "$output_dir" ]; then
     fi
     existing_output="$(find "$output_dir" -mindepth 1 -maxdepth 1 -print -quit)"
     if [ -n "$existing_output" ]; then
-        printf 'Output directory must be empty: %s\n' "$output_dir" >&2
-        exit 1
+        if [ ! -d "$output_dir/DerivedData" ] || [ -L "$output_dir/DerivedData" ] ||
+           [ -n "$(find "$output_dir" -mindepth 1 -maxdepth 1 ! -name DerivedData -print -quit)" ]; then
+            printf 'Output directory must be empty or contain only an interrupted build cache: %s\n' "$output_dir" >&2
+            exit 1
+        fi
     fi
 else
     mkdir -p "$output_dir"
@@ -406,7 +413,9 @@ build_configuration="$channel"
 build_settings=(
     "DEVELOPMENT_TEAM=$team_id"
     'CODE_SIGN_STYLE=Automatic'
-    "CODE_SIGN_IDENTITY=$DIRECT_APP_SIGNING_IDENTITY"
+    # Automatic archives use development signing. The Developer ID export
+    # below re-signs app, Widget and helper before any notarization or upload.
+    'CODE_SIGN_IDENTITY=Apple Development'
     "MARKETING_VERSION=$version"
     "CURRENT_PROJECT_VERSION=$build_number"
 )
@@ -484,7 +493,9 @@ preflight_args=(
 if [ -n "$mas_installer" ]; then
     preflight_args+=(--mas-installer "$mas_installer")
 fi
-preflight_args+=("${preflight_notary_args[@]}")
+if [ "${#preflight_notary_args[@]}" -gt 0 ]; then
+    preflight_args+=("${preflight_notary_args[@]}")
+fi
 "$repo_root/Scripts/release-preflight.sh" "${preflight_args[@]}"
 
 submit_and_require_accepted() {

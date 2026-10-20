@@ -39,6 +39,56 @@ jobs:
       - name: Run core unit tests
         run: swift test --package-path Packages/ThermFlowCore
 
+  app-test-bundles:
+    name: Compile Debug, Beta and Release UI test bundles
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate --spec project.yml
+      - name: Compile visible-window UI tests
+        run: >-
+          xcodebuild build-for-testing
+          -project MacThermFlow.xcodeproj
+          -scheme CoolCumberScreenshots
+          -configuration Debug
+          -destination 'generic/platform=macOS'
+          -derivedDataPath "${RUNNER_TEMP}/coolcumber-test-bundles"
+          -jobs 1
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          COMPILER_INDEX_STORE_ENABLE=NO
+      - name: Compile optimized Beta access tests
+        run: >-
+          xcodebuild build-for-testing
+          -project MacThermFlow.xcodeproj
+          -scheme CoolCumberBetaValidation
+          -configuration Beta
+          -destination 'generic/platform=macOS'
+          -derivedDataPath "${RUNNER_TEMP}/coolcumber-test-bundles"
+          -jobs 1
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          COMPILER_INDEX_STORE_ENABLE=NO
+      - name: Compile production Release UI tests
+        run: >-
+          xcodebuild build-for-testing
+          -project MacThermFlow.xcodeproj
+          -scheme CoolCumberProductionValidation
+          -configuration Release
+          -destination 'generic/platform=macOS'
+          -derivedDataPath "${RUNNER_TEMP}/coolcumber-test-bundles"
+          -jobs 1
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          COMPILER_INDEX_STORE_ENABLE=NO
+
   unsigned-builds:
     name: Unsigned ${{ matrix.configuration }} / both channels
     runs-on: macos-15
@@ -63,3 +113,9 @@ jobs:
           Scripts/build-unsigned.sh
           --derived-data "${RUNNER_TEMP}/coolcumber-${{ matrix.configuration }}"
           --configuration "${{ matrix.configuration }}"
+      - name: Verify Beta dates survive an incremental rebuild
+        if: matrix.configuration == 'Beta'
+        run: >-
+          Scripts/build-unsigned.sh
+          --derived-data "${RUNNER_TEMP}/coolcumber-Beta"
+          --configuration Beta

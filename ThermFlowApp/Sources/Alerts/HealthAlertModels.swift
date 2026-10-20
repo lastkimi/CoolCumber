@@ -142,29 +142,31 @@ struct TrustedHealthAlertPolicy: Sendable {
         var identityComponents: [String] = []
         var latestObservationDate = Date.distantPast
 
-        switch trustedThermalPressure(
-            from: snapshot,
+        switch TrustedThermalPressurePolicy().assess(
+            snapshot,
             at: evaluationDate,
             maximumSampleAge: maximumSampleAge
         ) {
-        case let .success(reading):
+        case let .alert(event):
             trustedSignalCount += 1
-            pressureValue = reading.value
-            switch reading.value {
+            pressureValue = event.value
+            switch event.trigger {
             case .serious:
                 triggers.append(.thermalPressureSerious)
-                identityComponents.append(reading.sampleIdentity)
-                latestObservationDate = max(latestObservationDate, reading.observedAt)
             case .critical:
                 triggers.append(.thermalPressureCritical)
-                identityComponents.append(reading.sampleIdentity)
-                latestObservationDate = max(latestObservationDate, reading.observedAt)
-            case .nominal, .fair:
-                break
             }
-        case let .failure(reason):
+            identityComponents.append(event.sampleIdentity)
+            latestObservationDate = max(latestObservationDate, event.observedAt)
+        case let .noAlert(value):
+            trustedSignalCount += 1
+            pressureValue = value
+        case let .rejected(reason):
             rejections.append(
-                TrustedHealthSignalRejection(signal: .thermalPressure, reason: reason)
+                TrustedHealthSignalRejection(
+                    signal: .thermalPressure,
+                    reason: healthRejectionReason(for: reason)
+                )
             )
         }
 
@@ -207,42 +209,17 @@ struct TrustedHealthAlertPolicy: Sendable {
         )
     }
 
-    private func trustedThermalPressure(
-        from snapshot: SystemSnapshot,
-        at evaluationDate: Date,
-        maximumSampleAge: TimeInterval
-    ) -> Result<TrustedReading<ThermalPressure>, TrustedHealthSignalRejectionReason> {
-        guard snapshot.capabilities.allows(
-            .thermalPressure,
-            at: evaluationDate,
-            maximumAge: maximumSampleAge
-        ) else {
-            return .failure(.capabilityUnavailable)
+    private func healthRejectionReason(
+        for reason: TrustedThermalPressureRejectionReason
+    ) -> TrustedHealthSignalRejectionReason {
+        switch reason {
+        case .unsupportedSchema: return .unsupportedSchema
+        case .capabilityUnavailable: return .capabilityUnavailable
+        case .sampleUnavailable: return .sampleUnavailable
+        case .futureDated: return .futureDated
+        case .stale: return .stale
+        case .untrustedProvenance: return .untrustedProvenance
         }
-
-        let sample = snapshot.thermal.pressure
-        guard sample.availability == .available, let pressure = sample.value else {
-            return .failure(.sampleUnavailable)
-        }
-        guard let rejection = temporalRejection(
-            observedAt: sample.observedAt,
-            evaluationDate: evaluationDate,
-            maximumSampleAge: maximumSampleAge
-        ) else {
-            guard sample.provenance.quality == .systemReported,
-                  sample.provenance.source == .processInfo,
-                  sample.provenance.derivedFrom.isEmpty else {
-                return .failure(.untrustedProvenance)
-            }
-            return .success(
-                TrustedReading(
-                    value: pressure,
-                    observedAt: sample.observedAt,
-                    sampleIdentity: "pressure:\(sample.observedAt.timeIntervalSinceReferenceDate.bitPattern):\(pressure.rawValue)"
-                )
-            )
-        }
-        return .failure(rejection)
     }
 
     private func trustedCPUTemperature(

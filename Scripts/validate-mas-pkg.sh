@@ -12,8 +12,12 @@ Usage:
   Scripts/validate-mas-pkg.sh \
     --pkg /absolute/path/to/AppStore.pkg \
     --version 1.2.0 \
-    --build 3 \
-    --team-id TEAM_ID
+    --build 4 \
+    --team-id TEAM_ID \
+    --configuration Beta
+
+For an intermediate Xcode automatically signed archive only, --app may also
+use --allow-development-archive. Package validation never accepts that option.
 
 This command is read-only with respect to the package. It expands a temporary
 copy and validates the exact payload that would be uploaded.
@@ -21,8 +25,9 @@ copy and validates the exact payload that would be uploaded.
   Scripts/validate-mas-pkg.sh \
     --app /absolute/path/to/CoolCumber.app \
     --version 1.2.0 \
-    --build 3 \
-    --team-id TEAM_ID
+    --build 4 \
+    --team-id TEAM_ID \
+    --configuration Beta
 USAGE
 }
 
@@ -31,6 +36,8 @@ app_input=""
 expected_version=""
 expected_build=""
 team_id=""
+configuration=""
+allow_development_archive=0
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -53,6 +60,14 @@ while [ "$#" -gt 0 ]; do
         --team-id)
             team_id="${2:-}"
             shift 2
+            ;;
+        --configuration)
+            configuration="${2:-}"
+            shift 2
+            ;;
+        --allow-development-archive)
+            allow_development_archive=1
+            shift
             ;;
         -h|--help)
             usage
@@ -78,10 +93,19 @@ require_value() {
 require_value '--version' "$expected_version"
 require_value '--build' "$expected_build"
 require_value '--team-id' "$team_id"
+require_value '--configuration' "$configuration"
+case "$configuration" in Beta|Release) ;; *)
+    printf '%s\n' '--configuration must be Beta or Release.' >&2
+    exit 64
+esac
 
 if { [ -z "$pkg_path" ] && [ -z "$app_input" ]; } ||
    { [ -n "$pkg_path" ] && [ -n "$app_input" ]; }; then
     printf '%s\n' 'Provide exactly one of --pkg or --app.' >&2
+    exit 64
+fi
+if [ "$allow_development_archive" -eq 1 ] && [ -n "$pkg_path" ]; then
+    printf '%s\n' '--allow-development-archive is restricted to intermediate --app validation.' >&2
     exit 64
 fi
 if [ -n "$pkg_path" ]; then
@@ -192,6 +216,10 @@ assert_mas_signature() {
     fi
     if ! grep -F -q 'Authority=Apple Distribution:' <<< "$signature_details" &&
        ! grep -F -q 'Authority=3rd Party Mac Developer Application:' <<< "$signature_details"; then
+        if [ "$allow_development_archive" -eq 1 ] &&
+           grep -F -q 'Authority=Apple Development:' <<< "$signature_details"; then
+            return
+        fi
         printf '%s is not signed with an App Store distribution identity.\n' "$label" >&2
         exit 1
     fi
@@ -219,6 +247,13 @@ extract_entitlements() {
     plutil -lint "$destination" > /dev/null
 }
 
+is_development_archive() {
+    [ "$allow_development_archive" -eq 1 ] || return 1
+    local details
+    details="$(codesign -d --verbose=4 "$1" 2>&1)" || return 1
+    grep -F -q 'Authority=Apple Development:' <<< "$details"
+}
+
 assert_signed_entitlements() {
     local signed_path="$1"
     local expected_bundle_id="$2"
@@ -232,12 +267,15 @@ assert_signed_entitlements() {
     extract_entitlements "$signed_path" "$entitlements"
     sandbox_value="$(plist_value "$entitlements" com.apple.security.app-sandbox)"
     assert_equal "$sandbox_value" 'true' "$label app sandbox entitlement"
-    if [ "$(plist_value "$entitlements" com.apple.security.get-task-allow 2> /dev/null || true)" = 'true' ]; then
+    if ! is_development_archive "$signed_path" &&
+       [ "$(plist_value "$entitlements" com.apple.security.get-task-allow 2> /dev/null || true)" = 'true' ]; then
         printf '%s must not contain get-task-allow.\n' "$label" >&2
         exit 1
     fi
-    application_identifier="$(plist_value "$entitlements" com.apple.application-identifier)"
-    assert_equal "$application_identifier" "$team_id.$expected_bundle_id" "$label signed application-identifier"
+    application_identifier="$(plist_value "$entitlements" com.apple.application-identifier 2> /dev/null || true)"
+    if [ -n "$application_identifier" ] || ! is_development_archive "$signed_path"; then
+        assert_equal "$application_identifier" "$team_id.$expected_bundle_id" "$label signed application-identifier"
+    fi
     groups="$(plist_value "$entitlements" com.apple.security.application-groups)"
     if ! grep -F -q "$RELEASE_APP_GROUP" <<< "$groups"; then
         printf '%s signed application groups do not contain %s.\n' "$label" "$RELEASE_APP_GROUP" >&2
@@ -257,6 +295,9 @@ assert_provisioning_profile() {
     local groups
 
     if [ ! -s "$profile_path" ]; then
+        if is_development_archive "$bundle_path"; then
+            return
+        fi
         printf '%s is missing embedded.provisionprofile.\n' "$label" >&2
         exit 1
     fi
@@ -266,14 +307,23 @@ assert_provisioning_profile() {
     fi
     plutil -lint "$decoded_profile" > /dev/null
     profile_team="$(plist_value "$decoded_profile" TeamIdentifier:0)"
-    application_identifier="$(plist_value "$decoded_profile" Entitlements:application-identifier)"
+    application_identifier="$(plist_value "$decoded_profile" Entitlements:com.apple.application-identifier 2> /dev/null ||
+        plist_value "$decoded_profile" Entitlements:application-identifier)"
     assert_equal "$profile_team" "$team_id" "$label provisioning Team ID"
     assert_equal "$application_identifier" "$team_id.$expected_bundle_id" "$label provisioning application-identifier"
-    groups="$(plist_value "$decoded_profile" Entitlements:com.apple.security.application-groups)"
-    if ! grep -F -q "$RELEASE_APP_GROUP" <<< "$groups"; then
-        printf '%s provisioning profile does not contain the required App Group.\n' "$label" >&2
-        exit 1
-    fi
+    # Team-ID-prefixed macOS groups are authorized by the verified signing
+    # Team and need not appear in a profile. Signed entitlements above still
+    # must claim the exact group. iOS-style registered groups require a grant.
+    case "$RELEASE_APP_GROUP" in
+        "$team_id".*) ;;
+        *)
+            groups="$(plist_value "$decoded_profile" Entitlements:com.apple.security.application-groups)"
+            if ! grep -F -q "$RELEASE_APP_GROUP" <<< "$groups"; then
+                printf '%s profile does not authorize the registered App Group.\n' "$label" >&2
+                exit 1
+            fi
+            ;;
+    esac
 }
 
 assert_privacy_reason() {
@@ -372,6 +422,15 @@ assert_equal "$(plist_value "$widget_info" CFBundleVersion)" "$expected_build" '
 
 app_executable="$(plist_value "$app_info" CFBundleExecutable)"
 widget_executable="$(plist_value "$widget_info" CFBundleExecutable)"
+beta_starts_at="$(plist_value "$app_info" CoolCumberBetaStartsAt 2> /dev/null || true)"
+beta_expires_at="$(plist_value "$app_info" CoolCumberBetaExpiresAt 2> /dev/null || true)"
+if [ "$configuration" = Beta ]; then
+    assert_equal "$beta_starts_at" "$RELEASE_BETA_STARTS_AT" 'Beta preview start'
+    assert_equal "$beta_expires_at" "$RELEASE_BETA_EXPIRES_AT" 'Beta preview expiry'
+elif [ -n "$beta_starts_at$beta_expires_at" ]; then
+    printf '%s\n' 'Production Release payload must not contain Beta preview dates.' >&2
+    exit 1
+fi
 assert_universal_binary "$app_path/Contents/MacOS/$app_executable" 'Mac App Store app'
 assert_universal_binary "$widget_path/Contents/MacOS/$widget_executable" 'Mac App Store widget'
 assert_mas_signature "$app_path" 'Mac App Store app'
@@ -394,7 +453,8 @@ if [ -e "$app_path/Contents/Library/LaunchServices/$RELEASE_HELPER_EXECUTABLE_NA
     printf '%s\n' 'Mac App Store package contains a prohibited privileged component.' >&2
     exit 1
 fi
-if strings "$app_path/Contents/MacOS/$app_executable" | grep -F -q "$RELEASE_HELPER_SERVICE_ID"; then
+strings "$app_path/Contents/MacOS/$app_executable" > "$work_dir/app-binary-strings.txt"
+if grep -F -q "$RELEASE_HELPER_SERVICE_ID" "$work_dir/app-binary-strings.txt"; then
     printf '%s\n' 'Mac App Store executable references the Direct-only helper service.' >&2
     exit 1
 fi
