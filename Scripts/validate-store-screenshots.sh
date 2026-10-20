@@ -153,7 +153,10 @@ jq -e \
     .productVersion == $expectedVersion and
     .build == $expectedBuild and
     .baseCommit == $expectedCommit and
-    .captureScheme == "CoolCumberScreenshots" and
+    (
+        (($expectedBuild | tonumber) < 5 and .captureScheme == "CoolCumberScreenshots") or
+        (.captureScheme == "CoolCumberProductionValidation" and .captureConfiguration == "Release")
+    ) and
     .captureTarget == "ThermFlowAppStore" and
     .testSummary == "6 passed, 0 failed, 0 skipped" and
     .requirements.width == 2560 and

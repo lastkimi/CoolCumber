@@ -223,23 +223,36 @@ To review: launch the app with no account, use the menu-bar cucumber to open Coo
 Validation boundary: 103 deterministic ThermFlowCore tests passed. Build 3 had no external TestFlight group or testers; no external beta feedback is claimed. Build-4 external testing must be reported only after App Store Connect provides evidence that it occurred.
 ```
 
-## Planned paid App Review notes — build 5 or later
+## Production build-5 evidence — 20 October 2026
 
-This is a template, not a claim about an existing binary. Replace the build
-number and validation evidence after the build bump, signed archive, and
-fresh UI capture are complete.
+- Exact archive source: `df0b9745abab400a396b7904ca81e748415af037`.
+- Mac App Store Release archive and distribution package sealed and validated.
+- 103 deterministic core tests passed; six bilingual visible-window optimized
+  Release tests passed, with no failures or skips.
+- CI for the exact source completed successfully across all six jobs,
+  including universal Debug/Beta/Release builds in both channels.
+- The real Release Pro sheet displayed the StoreKit-returned `$19.99` price,
+  Restore and implemented benefits, with no local StoreKit configuration.
+  This is product-loading/UI evidence, not a production purchase or revenue.
+- Production submission and public paid availability must be confirmed from
+  App Store Connect; neither upload nor this file alone establishes approval.
+
+## Paid App Review notes — build 5
+
+These describe the existing build-5 Release candidate. Provider submission
+receipts remain separate from this source document.
 
 ```text
 The first non-consumable IAP is CoolCumber Pro Lifetime (com.slmcamp.CoolCumber.pro.lifetime). Free includes live monitoring and 24-hour local history. Pro adds 30-day local history, opt-in local alerts for fresh serious or critical thermal pressure reported by macOS, and CSV export. No fan, SMC, process, file-cleaning, battery-control, or temperature-threshold capability is sold by this IAP.
 
-To review the future paid build: open Settings > View lifetime Pro, verify the localized price returned by the production App Store storefront, and purchase or restore the product. Then open History to verify the 30-day label, thermal-pressure alert setting, and Export CSV action. The purchase state changes only after StoreKit returns a verified transaction.
+To review build 5: open View Pro in the main toolbar or Settings > View lifetime Pro, verify the localized price returned by StoreKit, and purchase or restore the product. Then open History to verify the 30-day label, thermal-pressure alert setting, and Export CSV action. The purchase state changes only after StoreKit returns a verified matching, non-revoked transaction. The candidate has no temporary Beta access and no local StoreKit fixture.
 ```
 
-## Required paid-release assets — pending build 5
+## Required paid-release assets — build 5
 
 - Three real English and three real Simplified Chinese screenshots captured
-  from the visible, exact paid candidate: Overview, History, and Pro
-- A fresh IAP review screenshot showing the production StoreKit storefront
+  from the visible, optimized build-5 candidate: Overview, History, and Pro
+- A fresh IAP review screenshot showing the StoreKit-returned storefront
   price, Restore, and all implemented benefits
 - Public support URL and public HTTPS privacy-policy URL
 - App Review contact details in App Store Connect
@@ -247,7 +260,7 @@ To review the future paid build: open Settings > View lifetime Pro, verify the l
 The old build-4 Debug purchase screenshots are local visual-QA drafts, not
 canonical Beta assets and not paid build-5 release evidence. Do not commit or
 upload them as the paid submission. After the exact paid candidate is committed,
-capture fresh assets and validate them with explicit version, build, and source
+capture fresh Release assets and validate them with explicit version, build, and source
 commit arguments:
 
 ```bash
