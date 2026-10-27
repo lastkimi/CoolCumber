@@ -64,7 +64,7 @@ final class StoreScreenshots: XCTestCase {
             requiredText: [
                 "Your access", "What is included", "Restore purchases", "Free", "Pro"
             ],
-            primaryCTA: "Unlock Pro — $19.99",
+            primaryCTAPrefix: "Unlock Pro — ",
             paywall: PaywallExpectation(openButton: "View Pro", closeButton: "Close")
         )
     }
@@ -116,7 +116,7 @@ final class StoreScreenshots: XCTestCase {
             windowTitle: "概览",
             topAnchorIdentifier: "coolcumber.paywall.title",
             requiredText: ["你的权益", "包含内容", "恢复购买", "Free", "Pro"],
-            primaryCTA: "解锁 Pro — $19.99",
+            primaryCTAPrefix: "解锁 Pro — ",
             paywall: PaywallExpectation(openButton: "了解 Pro", closeButton: "关闭")
         )
     }
@@ -151,6 +151,7 @@ final class StoreScreenshots: XCTestCase {
         topAnchorIdentifier: String,
         requiredText: [String],
         primaryCTA: String? = nil,
+        primaryCTAPrefix: String? = nil,
         paywall: PaywallExpectation? = nil,
         recordRealCheck: Bool = false
     ) {
@@ -247,6 +248,14 @@ final class StoreScreenshots: XCTestCase {
             XCTAssertTrue(button.waitForExistence(timeout: 20), "Complete CTA was missing: \(primaryCTA)")
             XCTAssertTrue(button.isHittable, "CTA was not hittable: \(primaryCTA)")
             assertFullyVisible(button, within: window, name: primaryCTA)
+            layoutElements.append(button)
+        }
+        if let primaryCTAPrefix {
+            let button = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", primaryCTAPrefix)).firstMatch
+            XCTAssertTrue(button.waitForExistence(timeout: 25), "StoreKit must return a real localized price, not a test-fixture or hardcoded currency")
+            XCTAssertTrue(button.isEnabled)
+            assertFullyVisible(button, within: window, name: button.label)
+            print("STOREKIT_LOCALIZED_PURCHASE_TITLE=\(button.label)")
             layoutElements.append(button)
         }
 

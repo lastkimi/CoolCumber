@@ -150,6 +150,8 @@ final class WorkloadCheckController: ObservableObject {
             // A memory-only check expiring cannot authorize deletion of an
             // older unreadable or unsuccessfully replaced saved document.
             check = nil
+            saveGeneration &+= 1
+            isSaving = false
         }
         message = productLocalized("The latest check's 24-hour retention window ended. Continuous history is managed separately.",
                                    "最近检查的 24 小时保留期已结束；连续历史在“历史”中单独管理。")

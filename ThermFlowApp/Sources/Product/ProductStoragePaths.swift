@@ -13,7 +13,10 @@ enum ProductStoragePaths {
     static var preferences: UserDefaults {
         guard usesIsolatedStorage else { return .standard }
         let scope = validatedScope ?? ephemeralScope
-        return UserDefaults(suiteName: "com.slmcamp.CoolCumber.QA." + scope.uuidString)!
+        guard let defaults = UserDefaults(suiteName: "com.slmcamp.CoolCumber.QA." + scope.uuidString) else {
+            preconditionFailure("Isolated preferences unavailable; refusing to fall back to user preferences")
+        }
+        return defaults
     }
 
     private static var validatedScope: UUID? {
