@@ -28,7 +28,7 @@ actor TrustedHealthAlertController {
 
     init(
         notificationCenter: UNUserNotificationCenter = .current(),
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = ProductStoragePaths.preferences,
         policy: TrustedHealthAlertPolicy = TrustedHealthAlertPolicy(),
         notificationBuilder: TrustedHealthAlertNotificationBuilder =
             TrustedHealthAlertNotificationBuilder()

@@ -70,13 +70,16 @@ final class TelemetryHistoryStore {
 
         snapshotCancellable = snapshotPublisher
             .receive(on: workerQueue)
+            .compactMap { HistoryRecord(snapshot: $0) }
+            // Do not let the initial unknown snapshot consume the entire
+            // five-minute throttle bucket before any real reading arrives.
+            .filter { $0.usableValueCount(maximumAge: HistorySamplingPolicy().maximumMetricAge) > 0 }
             .throttle(
                 for: .seconds(Int(HistorySamplingPolicy.bucketDuration)),
                 scheduler: workerQueue,
                 latest: true
             )
-            .sink { [weak self] snapshot in
-                guard let record = HistoryRecord(snapshot: snapshot) else { return }
+            .sink { [weak self] record in
                 self?.ingest(record, referenceDate: Date())
             }
     }
@@ -168,11 +171,7 @@ final class TelemetryHistoryStore {
     }
 
     private static func defaultHistoryFileURL(using fileManager: FileManager) -> URL? {
-        fileManager.containerURL(
-            forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier
-        )?
-        .appendingPathComponent(Self.relativeDirectory, isDirectory: true)
-        .appendingPathComponent(Self.fileName, isDirectory: false)
+        ProductStoragePaths.historyFile(Self.fileName, using: fileManager)
     }
 
     private func setState(
