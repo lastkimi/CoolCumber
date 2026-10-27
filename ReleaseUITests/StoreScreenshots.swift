@@ -22,17 +22,29 @@ final class StoreScreenshots: XCTestCase {
             windowTitle: "Overview",
             topAnchorIdentifier: "coolcumber.page.overview.top",
             requiredText: [
-                "Overview", "Cooling", "Activity", "History", "Battery",
-                "Maintenance", "Settings"
+                "Overview", "Activity", "Thermal check", "History", "Battery",
+                "Sensor access", "Data & privacy", "Settings"
             ]
         )
     }
 
-    func test02EnglishHistory() {
+    func test02EnglishActivity() {
+        capture(language: "en", destination: "--open-activity", attachmentName: "02-activity-en",
+                windowTitle: "Activity", topAnchorIdentifier: "coolcumber.metric.cpu",
+                requiredText: ["CPU usage", "Memory use", "Storage use"], primaryCTA: "Compare a workload change")
+    }
+
+    func test03EnglishCheck() {
+        capture(language: "en", destination: "--open-check", attachmentName: "03-check-live-en",
+                windowTitle: "Thermal check", topAnchorIdentifier: "coolcumber.check.top",
+                requiredText: ["Baseline", "Follow-up"], primaryCTA: "Finish check", recordRealCheck: true)
+    }
+
+    func test04EnglishHistory() {
         capture(
             language: "en",
             destination: "--open-history",
-            attachmentName: "02-history-en",
+            attachmentName: "05-history-en",
             windowTitle: "History",
             topAnchorIdentifier: "coolcumber.page.history.top",
             requiredText: [
@@ -42,11 +54,11 @@ final class StoreScreenshots: XCTestCase {
         )
     }
 
-    func test03EnglishPro() {
+    func test05EnglishPro() {
         capture(
             language: "en",
             destination: "--open-pro",
-            attachmentName: "03-pro-en",
+            attachmentName: "06-pro-en",
             windowTitle: "Overview",
             topAnchorIdentifier: "coolcumber.paywall.title",
             requiredText: [
@@ -57,7 +69,7 @@ final class StoreScreenshots: XCTestCase {
         )
     }
 
-    func test04ChineseOverview() {
+    func test06ChineseOverview() {
         capture(
             language: "zh",
             destination: "--open-main-window",
@@ -65,16 +77,28 @@ final class StoreScreenshots: XCTestCase {
             windowTitle: "概览",
             topAnchorIdentifier: "coolcumber.page.overview.top",
             requiredText: [
-                "概览", "散热", "活动", "历史", "电池", "维护", "设置"
+                "概览", "活动", "热状态检查", "历史", "电池", "传感器权限", "数据与隐私", "设置"
             ]
         )
     }
 
-    func test05ChineseHistory() {
+    func test07ChineseActivity() {
+        capture(language: "zh", destination: "--open-activity", attachmentName: "02-activity-zh",
+                windowTitle: "活动", topAnchorIdentifier: "coolcumber.metric.cpu",
+                requiredText: ["CPU 使用率", "内存使用", "存储使用"], primaryCTA: "对比一次负载变化")
+    }
+
+    func test08ChineseCheck() {
+        capture(language: "zh", destination: "--open-check", attachmentName: "03-check-live-zh",
+                windowTitle: "热状态检查", topAnchorIdentifier: "coolcumber.check.top",
+                requiredText: ["基线", "对比阶段"], primaryCTA: "完成检查", recordRealCheck: true)
+    }
+
+    func test09ChineseHistory() {
         capture(
             language: "zh",
             destination: "--open-history",
-            attachmentName: "02-history-zh",
+            attachmentName: "05-history-zh",
             windowTitle: "历史",
             topAnchorIdentifier: "coolcumber.page.history.top",
             requiredText: [
@@ -84,17 +108,39 @@ final class StoreScreenshots: XCTestCase {
         )
     }
 
-    func test06ChinesePro() {
+    func test10ChinesePro() {
         capture(
             language: "zh",
             destination: "--open-pro",
-            attachmentName: "03-pro-zh",
+            attachmentName: "06-pro-zh",
             windowTitle: "概览",
             topAnchorIdentifier: "coolcumber.paywall.title",
             requiredText: ["你的权益", "包含内容", "恢复购买", "Free", "Pro"],
             primaryCTA: "解锁 Pro — $19.99",
             paywall: PaywallExpectation(openButton: "了解 Pro", closeButton: "关闭")
         )
+    }
+
+    func test11NarrowWindowKeepsActionsAndTruthfulSensorBoundary() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--skip-welcome", "--store-screenshot", "--open-sensor-access", "--ui-language-en",
+                               "--qa-storage-scope=\(UUID().uuidString)"]
+        app.launch()
+        defer { app.terminate() }
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 20))
+        normalize(window: window)
+        resize(window: window, to: CGSize(width: 940, height: 740))
+        waitForStableLayout([window])
+        let disclosure = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Temperature and fan readings are unsupported here")).firstMatch
+        XCTAssertTrue(disclosure.waitForExistence(timeout: 15), "The sandbox limitation must remain visible, not be stripped to look capable")
+        let navigation = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Thermal check")).firstMatch
+        XCTAssertTrue(navigation.waitForExistence(timeout: 15))
+        navigation.click()
+        let start = app.buttons["coolcumber.check.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 15))
+        XCTAssertTrue(start.isHittable)
+        assertFullyVisible(start, within: window, name: "Narrow-window footer action")
     }
 
     private func capture(
@@ -105,15 +151,19 @@ final class StoreScreenshots: XCTestCase {
         topAnchorIdentifier: String,
         requiredText: [String],
         primaryCTA: String? = nil,
-        paywall: PaywallExpectation? = nil
+        paywall: PaywallExpectation? = nil,
+        recordRealCheck: Bool = false
     ) {
         let app = XCUIApplication()
+        let storageScope = UUID().uuidString
+        print("NATIVE_CAPTURE_STORAGE_SCOPE=\(storageScope)")
         app.launchArguments = [
             "--skip-welcome",
             "--store-screenshot",
             destination,
             "--ui-language-\(language)",
             "--ui-appearance-dark",
+            "--qa-storage-scope=\(storageScope)",
             "-NSDisablePersistentUI", "YES",
             "-NSQuitAlwaysKeepsWindows", "NO"
         ]
@@ -144,6 +194,21 @@ final class StoreScreenshots: XCTestCase {
 
         normalize(window: window)
         assertWindowChrome(window)
+
+        if recordRealCheck {
+            recordCheckUntilReadyToFinish(app: app, window: window, language: language)
+        }
+        if destination == "--open-activity" {
+            waitForRealMetric("coolcumber.metric.cpu", in: app)
+            waitForRealMetric("coolcumber.metric.memorychip", in: app)
+        }
+        if destination == "--open-history" {
+            let count = app.staticTexts["coolcumber.history.record-count"]
+            XCTAssertTrue(count.waitForExistence(timeout: 20))
+            let predicate = NSPredicate(format: "label MATCHES %@", "^[1-9][0-9]* .*")
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: count)], timeout: 30), .completed,
+                           "The first real sample must not wait for the initial empty snapshot's five-minute throttle")
+        }
 
         if let paywall {
             let open = exactButton(paywall.openButton, in: app)
@@ -189,15 +254,72 @@ final class StoreScreenshots: XCTestCase {
         assertFrame(window.frame, matches: captureFrame, message: "Window moved before capture")
         print("STORE_SCREENSHOT_WINDOW_FRAME=\(window.frame)")
 
+        attachWindow(window, name: attachmentName)
+
+        if recordRealCheck {
+            app.buttons["coolcumber.check.advance"].click()
+            let phase = app.staticTexts["coolcumber.check.phase"]
+            waitForLabel(language == "zh" ? "检查已完成" : "Check complete", on: phase)
+            waitForLabel(language == "zh" ? "已保存在本机" : "Saved locally", on: app.staticTexts["coolcumber.check.saved"])
+            let summary = app.descendants(matching: .any)["coolcumber.check.summary"]
+            XCTAssertTrue(summary.waitForExistence(timeout: 15))
+            scrollToTop(containing: app.descendants(matching: .any)["coolcumber.check.top"], in: window)
+            assertFullyVisible(summary, within: window, name: "Actual comparison summary")
+            attachWindow(window, name: language == "zh" ? "04-check-report-zh" : "04-check-report-en")
+
+            // Normal termination flushes the bounded document write. Relaunch
+            // the same isolated namespace and verify real persistence, not a
+            // view-state flag or an injected snapshot.
+            app.terminate()
+            app.launch()
+            waitForLabel(language == "zh" ? "检查已完成" : "Check complete", on: app.staticTexts["coolcumber.check.phase"])
+        }
+    }
+
+    private func attachWindow(_ window: XCUIElement, name: String) {
         let screenshot = window.screenshot()
         let bitmap = NSBitmapImageRep(data: screenshot.pngRepresentation)
         XCTAssertEqual(bitmap?.pixelsWide, 2560, "Screenshot was not 2560 pixels wide")
         XCTAssertEqual(bitmap?.pixelsHigh, 1600, "Screenshot was not 1600 pixels high")
 
         let attachment = XCTAttachment(screenshot: screenshot)
-        attachment.name = attachmentName
+        attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    private func recordCheckUntilReadyToFinish(app: XCUIApplication, window: XCUIElement, language: String) {
+        let start = app.buttons["coolcumber.check.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 20))
+        start.click()
+        waitForLabel(language == "zh" ? "正在记录基线" : "Recording baseline", on: app.staticTexts["coolcumber.check.phase"])
+        let advance = app.buttons["coolcumber.check.advance"]
+        XCTAssertTrue(advance.waitForExistence(timeout: 20))
+        assertFullyVisible(advance, within: window, name: "Phase action must stay above the safe area")
+        waitUntilEnabled(advance)
+        advance.click()
+        waitForLabel(language == "zh" ? "正在记录对比阶段" : "Recording follow-up", on: app.staticTexts["coolcumber.check.phase"])
+        waitUntilEnabled(advance)
+        assertFullyVisible(advance, within: window, name: "Finish action")
+    }
+
+    private func waitUntilEnabled(_ element: XCUIElement) {
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: element)], timeout: 90), .completed,
+                       "Three real fresh observations spanning 20 seconds must arrive; no fast-forward or fake data is used")
+        XCTAssertTrue(element.isEnabled)
+    }
+
+    private func waitForLabel(_ text: String, on element: XCUIElement) {
+        XCTAssertTrue(element.waitForExistence(timeout: 20))
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", text), object: element)], timeout: 20), .completed)
+    }
+
+    private func waitForRealMetric(_ identifier: String, in app: XCUIApplication) {
+        let element = app.descendants(matching: .any)[identifier]
+        XCTAssertTrue(element.waitForExistence(timeout: 20))
+        let ready = NSPredicate(format: "value MATCHES %@ AND NOT value CONTAINS %@ AND NOT value CONTAINS %@", "^[0-9]+([.,][0-9]+)? %.*", "Stale", "已过期")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: element)], timeout: 30), .completed,
+                       "The native capture requires an actual CPU/memory reading")
     }
 
     private func normalize(window: XCUIElement) {

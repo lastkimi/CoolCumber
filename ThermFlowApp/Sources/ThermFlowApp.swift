@@ -28,9 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Presentation-only launch options are also available when capturing
         // the exact optimized release. They never inject metrics or access.
         if arguments.contains("--ui-language-en") {
-            LanguageManager.shared.setLanguage("en")
+            LanguageManager.shared.setPresentationLanguage("en")
         } else if arguments.contains("--ui-language-zh") {
-            LanguageManager.shared.setLanguage("zh")
+            LanguageManager.shared.setPresentationLanguage("zh")
         }
         if arguments.contains("--ui-appearance-dark") {
             NSApp.appearance = NSAppearance(named: .darkAqua)
@@ -49,12 +49,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let shouldShowWelcome = arguments.contains("--show-welcome")
-            || (!UserDefaults.standard.bool(
+            || (!ProductStoragePaths.preferences.bool(
                 forKey: ProductDefaultsKey.completedWelcome
             ) && !arguments.contains("--skip-welcome"))
         let requestedWindow = [
             "--open-main-window",
             "--open-history",
+            "--open-check",
+            "--open-activity",
+            "--open-sensor-access",
+            "--open-data",
             "--open-settings",
             "--open-pro",
             "--show-welcome"
@@ -63,6 +67,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async { [weak self] in
                 if arguments.contains("--open-history") {
                     ProductUIModel.shared.selectedSection = .history
+                } else if arguments.contains("--open-check") {
+                    ProductUIModel.shared.selectedSection = .check
+                } else if arguments.contains("--open-activity") {
+                    ProductUIModel.shared.selectedSection = .activity
+                } else if arguments.contains("--open-sensor-access") {
+                    ProductUIModel.shared.selectedSection = .cooling
+                } else if arguments.contains("--open-data") {
+                    ProductUIModel.shared.selectedSection = .maintenance
                 } else if arguments.contains("--open-settings") {
                     ProductUIModel.shared.selectedSection = .settings
                 }
@@ -73,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         ProductUIModel.shared.stopReadOnlyMonitoring()
+        WorkloadCheckController.shared.flushPendingWrites()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -97,6 +110,7 @@ enum ProductSection: String, CaseIterable, Identifiable, Hashable {
     case overview
     case cooling
     case activity
+    case check
     case history
     case battery
     case maintenance
@@ -109,9 +123,10 @@ enum ProductSection: String, CaseIterable, Identifiable, Hashable {
         case .overview: return "gauge.with.dots.needle.67percent"
         case .cooling: return "fanblades"
         case .activity: return "waveform.path.ecg"
+        case .check: return "chart.line.uptrend.xyaxis"
         case .history: return "chart.xyaxis.line"
         case .battery: return "battery.75percent"
-        case .maintenance: return "wrench.and.screwdriver"
+        case .maintenance: return "lock.doc"
         case .settings: return "gearshape"
         }
     }
@@ -119,11 +134,12 @@ enum ProductSection: String, CaseIterable, Identifiable, Hashable {
     func title(isChinese: Bool) -> String {
         switch self {
         case .overview: return isChinese ? "概览" : "Overview"
-        case .cooling: return isChinese ? "散热" : "Cooling"
+        case .cooling: return isChinese ? "传感器权限" : "Sensor access"
         case .activity: return isChinese ? "活动" : "Activity"
+        case .check: return isChinese ? "热状态检查" : "Thermal check"
         case .history: return isChinese ? "历史" : "History"
         case .battery: return isChinese ? "电池" : "Battery"
-        case .maintenance: return isChinese ? "维护" : "Maintenance"
+        case .maintenance: return isChinese ? "数据与隐私" : "Data & privacy"
         case .settings: return isChinese ? "设置" : "Settings"
         }
     }
@@ -144,7 +160,7 @@ struct ProductRootView: View {
         )
         _showsWelcome = State(
             initialValue: arguments.contains("--show-welcome")
-                || (!UserDefaults.standard.bool(
+                || (!ProductStoragePaths.preferences.bool(
                     forKey: ProductDefaultsKey.completedWelcome
                 )
                     && !arguments.contains("--skip-welcome")
@@ -164,21 +180,25 @@ struct ProductRootView: View {
                     }
                 }
             )) {
-                Section {
-                    ForEach(ProductSection.allCases.filter { $0 != .settings }) { section in
+                Section(isChinese ? "观察与对比" : "Observe & compare") {
+                    ForEach([ProductSection.overview, .activity, .check, .history]) { section in
                         Label(section.title(isChinese: isChinese), systemImage: section.icon)
                             .font(.system(size: 13))
                             .tag(section)
                     }
                 }
 
-                Section {
-                    Label(
-                        ProductSection.settings.title(isChinese: isChinese),
-                        systemImage: ProductSection.settings.icon
-                    )
-                    .font(.system(size: 13))
-                    .tag(ProductSection.settings)
+                Section(isChinese ? "这台 Mac" : "This Mac") {
+                    ForEach([ProductSection.battery, .cooling]) { section in
+                        Label(section.title(isChinese: isChinese), systemImage: section.icon)
+                            .font(.system(size: 13)).tag(section)
+                    }
+                }
+                Section(isChinese ? "应用" : "App") {
+                    ForEach([ProductSection.maintenance, .settings]) { section in
+                        Label(section.title(isChinese: isChinese), systemImage: section.icon)
+                            .font(.system(size: 13)).tag(section)
+                    }
                 }
             }
             .listStyle(.sidebar)
@@ -213,9 +233,9 @@ struct ProductRootView: View {
                 }
         }
         .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 780, minHeight: 560)
+        .frame(minWidth: 900, minHeight: 640)
         .background(Color(nsColor: .windowBackgroundColor))
-        .tint(.green)
+        .tint(.teal)
         .onAppear {
             model.startReadOnlyMonitoring()
         }
@@ -224,7 +244,7 @@ struct ProductRootView: View {
         }
         .sheet(isPresented: $showsWelcome) {
             ProductWelcomeView(model: model) {
-                UserDefaults.standard.set(
+                ProductStoragePaths.preferences.set(
                     true,
                     forKey: ProductDefaultsKey.completedWelcome
                 )
@@ -242,6 +262,8 @@ struct ProductRootView: View {
             ProductCoolingPage(model: model, isChinese: isChinese)
         case .activity:
             ProductActivityPage(model: model, isChinese: isChinese)
+        case .check:
+            WorkloadCheckPage(isChinese: isChinese, showPro: { showsPaywall = true })
         case .history:
             ProductHistoryPage(
                 isChinese: isChinese,
@@ -363,24 +385,32 @@ private struct ProductOverviewPage: View {
             VStack(alignment: .leading, spacing: 20) {
                 ProductHealthSummary(model: model, isChinese: isChinese)
 
+                HStack(alignment: .center, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label(isChinese ? "Mac 热状态工作台" : "MAC THERMAL WORKBENCH", systemImage: "leaf")
+                            .font(.caption.weight(.semibold)).foregroundStyle(.teal)
+                        Text(isChinese ? "先观察负载，再对比变化。" : "See the workload. Then compare a change.")
+                            .font(.title2.weight(.semibold))
+                        Text(isChinese ? "从 macOS 实际提供的热压力、CPU 与内存读数开始。" : "Start with thermal pressure, CPU and memory that macOS actually reports.")
+                            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    Button(isChinese ? "打开热状态检查" : "Open thermal check") { model.selectedSection = .check }
+                        .buttonStyle(.borderedProminent).accessibilityIdentifier("coolcumber.overview.open-check")
+                }.padding(18).background(Color.teal.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
+
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
                     ProductMetricCard(
-                        title: isChinese ? "CPU 温度" : "CPU temperature",
-                        icon: "thermometer.medium",
-                        state: model.temperature,
-                        unit: "°C"
+                        title: isChinese ? "CPU 使用率" : "CPU usage",
+                        icon: "cpu",
+                        state: model.cpuUsage,
+                        unit: "%"
                     )
                     ProductMetricCard(
                         title: isChinese ? "系统热压力" : "Thermal pressure",
                         icon: "flame",
                         state: model.thermalPressure,
                         unit: ""
-                    )
-                    ProductMetricCard(
-                        title: isChinese ? "风扇转速" : "Fan speed",
-                        icon: "fanblades",
-                        state: model.fanSpeed,
-                        unit: "RPM"
                     )
                     ProductMetricCard(
                         title: isChinese ? "内存使用" : "Memory use",
@@ -392,10 +422,10 @@ private struct ProductOverviewPage: View {
 
                 ProductNoticeCard(
                     icon: "checkmark.shield",
-                    title: isChinese ? "可信数据原则" : "Trusted data by design",
+                    title: isChinese ? "明确可用数据与能力边界" : "Available signals, explicit boundaries",
                     message: isChinese
-                        ? "缺失的传感器读数会显示为“不可用”；旧读数会明确标记为“已过期”。CoolCumber 不再用默认数值填补空白。"
-                        : "Missing sensor readings are shown as unavailable and old readings are marked stale. CoolCumber no longer fills gaps with default values.",
+                        ? "缺失读数保持不可用，旧读数标记已过期。App Store 沙盒版不读取 CPU/GPU 温度与风扇转速，也不估算这些数值；详见“传感器权限”。"
+                        : "Missing readings stay unavailable and old readings are marked stale. The sandboxed App Store edition does not read CPU/GPU temperatures or fan RPM and never estimates them. See Sensor access.",
                     tone: .neutral
                 )
             }
@@ -466,7 +496,7 @@ private struct ProductCoolingPage: View {
         ProductPageContainer {
             ProductPageHeader(
                 icon: "fanblades",
-                title: isChinese ? "散热" : "Cooling",
+                title: isChinese ? "传感器权限" : "Sensor access",
                 subtitle: isChinese
                     ? "基于可验证读数展示散热状态；不支持的控制能力始终保持不可用。"
                     : "Cooling status is based on verified readings; unsupported controls remain unavailable."
@@ -496,10 +526,10 @@ private struct ProductCoolingPage: View {
             if model.isAppStoreEdition {
                 ProductNoticeCard(
                     icon: "lock.shield",
-                    title: isChinese ? "由 macOS 管理散热" : "Cooling is managed by macOS",
+                    title: isChinese ? "温度与风扇读数不受沙盒版支持" : "Temperature and fan readings are unsupported here",
                     message: isChinese
-                        ? "App Store 监测版不会提供沙盒外的风扇或 SMC 控制，也不会为这些不可用能力显示付费入口。"
-                        : "The App Store Monitor does not expose fan or SMC controls outside its sandbox, and never sells unavailable capabilities.",
+                        ? "App Store 监测版不提供 CPU/GPU 温度或风扇转速读数。macOS 系统热压力、CPU 与内存使用仍可用。此版不连接特权辅助组件，不出售风扇或 SMC 控制；Pro 不会改变这些权限。"
+                        : "The App Store Monitor does not provide CPU/GPU temperature or fan RPM readings. macOS thermal pressure, CPU use and memory use remain available. It does not connect to a privileged helper or sell fan/SMC control; Pro does not change these permissions.",
                     tone: .neutral
                 )
             } else {
@@ -529,8 +559,8 @@ private struct ProductActivityPage: View {
                 icon: "waveform.path.ecg",
                 title: isChinese ? "活动" : "Activity",
                 subtitle: isChinese
-                    ? "查看 CPU、内存与存储负载；进程操作不会在后台自动执行。"
-                    : "Review CPU, memory, and storage load. Process actions never run automatically in the background."
+                    ? "观察真实资源负载，或进入热状态检查对比前后变化；此页不是进程控制台。"
+                    : "Observe real resource load, then use Thermal check to compare a change. This is not a process-control console."
             )
 
             HStack(alignment: .top, spacing: 16) {
@@ -556,12 +586,20 @@ private struct ProductActivityPage: View {
 
             ProductNoticeCard(
                 icon: "person.crop.circle.badge.checkmark",
-                title: isChinese ? "操作需要确认" : "Actions require confirmation",
+                title: isChinese ? "进程级排查请使用系统工具" : "Use the system tool for individual processes",
                 message: isChinese
-                    ? "CoolCumber 只呈现可信的系统负载，不会自动终止、冻结或降频任何进程。"
-                    : "CoolCumber presents trusted system load and never terminates, freezes, or throttles a process automatically.",
+                    ? "这些是整个系统的读数，不是各进程排名。可在活动监视器中自行检查具体负载，再回到热状态检查记录观察结果。CoolCumber 不会终止、冻结或降频进程。"
+                    : "These are system-wide readings, not a process ranking. Inspect a workload yourself in Activity Monitor, then record observations in Thermal check. CoolCumber never terminates, freezes or throttles a process.",
                 tone: .neutral
             )
+
+            HStack {
+                Button(isChinese ? "打开活动监视器" : "Open Activity Monitor") {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
+                }
+                Button(isChinese ? "对比一次负载变化" : "Compare a workload change") { model.selectedSection = .check }
+                    .buttonStyle(.borderedProminent)
+            }
 
         }
     }
@@ -621,28 +659,28 @@ private struct ProductMaintenancePage: View {
     var body: some View {
         ProductPageContainer {
             ProductPageHeader(
-                icon: "wrench.and.screwdriver",
-                title: isChinese ? "维护" : "Maintenance",
+                icon: "lock.doc",
+                title: isChinese ? "数据与隐私" : "Data & privacy",
                 subtitle: isChinese
-                    ? "任何文件或系统变更都必须可解释、可确认、可恢复。"
-                    : "Every file or system change must be explained, confirmed, and recoverable."
+                    ? "只读监测、本机保存、明确的删除与导出边界。"
+                    : "Read-only monitoring, on-device storage and explicit removal/export boundaries."
             )
 
             ProductNoticeCard(
                 icon: "hand.raised.fill",
-                title: isChinese ? "自动维护已关闭" : "Automatic maintenance is off",
+                title: isChinese ? "没有自动系统维护" : "No automatic system maintenance",
                 message: isChinese
                     ? "CoolCumber 不会自动清理文件、制造内存压力、重建索引或修改后台服务。"
                     : "CoolCumber never cleans files automatically, creates memory pressure, rebuilds indexes, or changes background services.",
-                tone: .warning
+                tone: .neutral
             )
 
             ProductUnavailablePanel(
-                icon: "clock.arrow.circlepath",
-                title: isChinese ? "没有隐式系统操作" : "No hidden system actions",
+                icon: "externaldrive",
+                title: isChinese ? "本机数据保留与清除" : "Local retention and removal",
                 message: isChinese
-                    ? "维护页是清晰的产品边界说明；监测、历史和提醒不会修改你的文件或系统设置。"
-                    : "This page documents the product boundary: monitoring, history, and alerts do not modify your files or system settings."
+                    ? "Free 的连续历史最长 24 小时，Pro 最长 30 天；在“历史”中清除。最近一次手动热状态检查独立保存，最长 24 小时；在检查页确认清除或替换。CSV 只写入你在保存对话框中选定的文件。"
+                    : "Continuous history lasts up to 24 hours in Free or 30 days in Pro; clear it in History. The latest explicit thermal check is stored separately for up to 24 hours; confirm its removal or replacement on the check page. CSV writes only to the file you select."
             )
 
         }
@@ -968,6 +1006,7 @@ private struct ProductMetricCard: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityValue("\(state.displayedValue) \(unit). \(state.supportingText)")
+        .accessibilityIdentifier("coolcumber.metric.\(icon)")
     }
 }
 

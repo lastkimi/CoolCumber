@@ -58,6 +58,7 @@ final class ProductDataCoordinator: ObservableObject {
     func start() {
         guard !started else { return }
         started = true
+        WorkloadCheckController.shared.start()
 
         commerce.$entitlement
             .receive(on: RunLoop.main)

@@ -21,9 +21,7 @@ final class SharedSnapshotWriter {
     }
 
     var canAccessContainer: Bool {
-        fileManager.containerURL(
-            forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier
-        ) != nil
+        ProductStoragePaths.directory("Telemetry", using: fileManager) != nil
     }
 
     func write(_ snapshot: SystemSnapshot, at date: Date) throws {
@@ -31,16 +29,10 @@ final class SharedSnapshotWriter {
               snapshot.fans.count <= Self.maximumFanCount else {
             throw SharedSnapshotError.invalidSnapshot
         }
-        guard let containerURL = fileManager.containerURL(
-            forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier
-        ) else {
+        guard let directoryURL = ProductStoragePaths.directory("Telemetry", using: fileManager) else {
             throw SharedSnapshotError.appGroupUnavailable
         }
 
-        let directoryURL = containerURL.appendingPathComponent(
-            Self.relativeDirectory,
-            isDirectory: true
-        )
         try fileManager.createDirectory(
             at: directoryURL,
             withIntermediateDirectories: true
@@ -53,7 +45,8 @@ final class SharedSnapshotWriter {
         }
         try data.write(to: destinationURL, options: .atomic)
 
-        if lastWidgetReloadAt.map({ date.timeIntervalSince($0) >= 60 }) ?? true {
+        if !ProductStoragePaths.usesIsolatedStorage,
+           lastWidgetReloadAt.map({ date.timeIntervalSince($0) >= 60 }) ?? true {
             lastWidgetReloadAt = date
             WidgetCenter.shared.reloadTimelines(ofKind: "CoolCumberWidget")
         }

@@ -78,6 +78,23 @@ public struct HistoryFileRepository {
         }
 
         do {
+            // A failed load must not be followed by a successful-looking write
+            // that silently destroys the original unsupported/corrupt archive.
+            // Explicit remove remains available as the user's recovery action.
+            if fileManager.fileExists(atPath: fileURL.path) {
+                let attributes = try fileManager.attributesOfItem(atPath: fileURL.path)
+                guard attributes[.type] as? FileAttributeType == .typeRegular else {
+                    return HistoryPersistenceResult(records: records, status: .corruptArchive)
+                }
+                do {
+                    _ = try codec.decode(readBoundedArchive(from: fileURL))
+                } catch let error as HistoryArchiveError {
+                    let status: HistoryPersistenceStatus = error == .archiveTooLarge || error == .tooManyRecords ? .limitsExceeded : .corruptArchive
+                    return HistoryPersistenceResult(records: records, status: status)
+                } catch {
+                    return HistoryPersistenceResult(records: records, status: .readFailed)
+                }
+            }
             let encoding = try codec.encodeNewestRecordsFitting(records)
             try fileManager.createDirectory(
                 at: fileURL.deletingLastPathComponent(),

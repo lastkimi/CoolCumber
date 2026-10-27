@@ -111,6 +111,7 @@ struct ProductHistoryPage: View {
                     Text(String(format: isChinese ? "%d 条可信快照" : "%d trusted snapshots", filteredRecords.count))
                         .font(.subheadline)
                         .foregroundColor(.secondary)
+                        .accessibilityIdentifier("coolcumber.history.record-count")
 
                     Spacer()
 

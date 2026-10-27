@@ -160,7 +160,7 @@ final class ProductUIModel: ObservableObject {
     @Published private(set) var helperRuntimeStatus = "Not Installed"
     @Published var menuBarDisplayMode: ProductMenuBarDisplayMode {
         didSet {
-            UserDefaults.standard.set(menuBarDisplayMode.rawValue, forKey: Self.menuBarDisplayModeKey)
+            ProductStoragePaths.preferences.set(menuBarDisplayMode.rawValue, forKey: Self.menuBarDisplayModeKey)
         }
     }
 
@@ -175,7 +175,7 @@ final class ProductUIModel: ObservableObject {
     private init() {
         let initialSnapshot = DaemonManager.shared.systemSnapshot
         let evaluator = DiagnosisEvaluator()
-        let storedMode = UserDefaults.standard.string(forKey: Self.menuBarDisplayModeKey)
+        let storedMode = ProductStoragePaths.preferences.string(forKey: Self.menuBarDisplayModeKey)
         #if APPSTORE
         let defaultMenuBarMode = ProductMenuBarDisplayMode.iconOnly
         #else
@@ -640,13 +640,9 @@ final class MenuBarManager: NSObject, NSPopoverDelegate {
     }
 
     private func configureDashboardWindow() {
-        #if DEBUG
         let isStoreScreenshotCapture = ProcessInfo.processInfo.arguments.contains(
             "--store-screenshot"
         )
-        #else
-        let isStoreScreenshotCapture = false
-        #endif
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1040, height: 700),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -654,7 +650,7 @@ final class MenuBarManager: NSObject, NSPopoverDelegate {
             defer: false
         )
         window.title = "CoolCumber"
-        window.minSize = NSSize(width: 780, height: 560)
+        window.minSize = NSSize(width: 900, height: 640)
         window.isReleasedWhenClosed = false
         window.isRestorable = true
         if isStoreScreenshotCapture {
@@ -816,6 +812,11 @@ final class MenuBarManager: NSObject, NSPopoverDelegate {
     }
 
     private func menuBarTooltip(for temperature: ProductMetricState) -> String {
+        let model = ProductUIModel.shared
+        if model.isAppStoreEdition {
+            return productLocalized("CoolCumber · macOS thermal pressure: ", "CoolCumber · macOS 系统热压力：")
+                + model.thermalPressure.displayedValue + "\n" + model.thermalPressure.supportingText
+        }
         switch temperature {
         case .loading:
             return productLocalized("CoolCumber · Waiting for a trusted reading", "CoolCumber · 正在等待可信读数")
@@ -869,24 +870,24 @@ private struct ProductMenuPopoverView: View {
             Divider()
 
             VStack(spacing: 12) {
-                ProductMenuMetricRow(
-                    title: isChinese ? "CPU 温度" : "CPU temperature",
-                    icon: "thermometer.medium",
-                    state: model.temperature,
-                    unit: "°C"
-                )
-                ProductMenuMetricRow(
-                    title: isChinese ? "风扇" : "Fan",
-                    icon: "fanblades",
-                    state: model.fanSpeed,
-                    unit: "RPM"
-                )
+                if model.isAppStoreEdition {
+                    ProductMenuMetricRow(title: isChinese ? "CPU 使用率" : "CPU usage", icon: "cpu", state: model.cpuUsage, unit: "%")
+                    ProductMenuMetricRow(title: isChinese ? "系统热压力" : "Thermal pressure", icon: "flame", state: model.thermalPressure, unit: "")
+                } else {
+                    ProductMenuMetricRow(title: isChinese ? "CPU 温度" : "CPU temperature", icon: "thermometer.medium", state: model.temperature, unit: "°C")
+                    ProductMenuMetricRow(title: isChinese ? "风扇" : "Fan", icon: "fanblades", state: model.fanSpeed, unit: "RPM")
+                }
                 ProductMenuMetricRow(
                     title: isChinese ? "内存" : "Memory",
                     icon: "memorychip",
                     state: model.memoryPressure,
                     unit: "%"
                 )
+            }
+
+            if model.isAppStoreEdition {
+                Text(isChinese ? "沙盒版不提供温度或风扇转速；Pro 不改变传感器权限。" : "Temperature and fan RPM are unsupported in this sandboxed edition; Pro does not change sensor access.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
 
             Divider()

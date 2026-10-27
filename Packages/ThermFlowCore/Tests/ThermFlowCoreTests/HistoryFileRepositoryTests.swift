@@ -102,6 +102,10 @@ final class HistoryFileRepositoryTests: XCTestCase {
             HistoryPersistenceResult(records: [], status: .corruptArchive)
         )
         XCTAssertEqual(try Data(contentsOf: fileURL), corrupt)
+        let fresh = TestFixtures.historyRecord(at: TestFixtures.date, cpuUsage: 20)
+        XCTAssertEqual(repository.persist([fresh]).status, .corruptArchive)
+        XCTAssertEqual(try Data(contentsOf: fileURL), corrupt,
+                       "New real telemetry must not erase the unreadable legacy evidence.")
     }
 
     func testUnavailableContainerFailsClosedWithoutDiscardingWriteInput() {

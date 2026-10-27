@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.0 Build 6 — App Store review recovery candidate — 2026-10-27
+
+- Adds a read-only, two-phase thermal observation workflow with real CPU,
+  memory and macOS thermal-pressure samples, explicit gaps, bounded persistence
+  and descriptive comparisons rather than benchmark or causal claims.
+- Prioritizes supported signals in the dashboard and sandboxed menu bar while
+  retaining truthful temperature/fan capability disclosures.
+- Preserves unreadable legacy history instead of overwriting it with new data;
+  the continuous-history v1 schema and purchase identities remain unchanged.
+- Isolates native captures from user history, Widget cache and preferences.
+- This is a new candidate, not an uploaded, approved or publicly paid release.
+  The existing Direct build-5 release is unchanged.
+
 ## 1.2.0 Build 5 — Production candidate — 2026-10-20
 
 - The owner explicitly chose direct production launch without waiting for

@@ -1,5 +1,33 @@
 # CoolCumber 1.2 — App Store Connect metadata
 
+## Current recovery candidate — 27 October 2026
+
+The original production review for 1.2.0 (5) is now rejected under 4.3(a),
+with an Extended Review warning. The latest Apple message was read in full;
+it does not repeat the earlier nine questions or identify a specific similar
+app, component or security defect. The separate Pro product is READY_TO_SUBMIT,
+not waiting for review. Build 6 is the next source candidate, not yet uploaded.
+
+This candidate adds an explicit, read-only thermal check: collect a baseline,
+mark a follow-up phase, compare real CPU/memory/macOS thermal-pressure
+observations, and reopen the latest bounded local report. It does not create
+workloads or infer causation. The latest check is stored separately for up to
+24 hours; existing continuous history and purchase identities remain unchanged.
+Missing, stale, unsupported and untrusted values remain explicit gaps.
+
+The primary dashboard and menu bar prioritize signals available to the edition.
+The sandbox's unsupported CPU/GPU temperature and fan RPM are still disclosed
+in Sensor access and the overview, never fabricated or offered as paid controls.
+The former static Maintenance surface is replaced with accurate data/privacy
+guidance. Unknown or corrupt legacy history archives must not be overwritten.
+
+The 5–6 framed images per locale and bilingual presentation are studio quality
+targets, not Apple's universal screenshot minimum or proof of why 4.3 occurred.
+New native checks, original-candidate captures, exact metadata and a substantive
+original-review update remain required before this candidate can be submitted.
+Do not create/resume a Goal or enable the paused product automation. Direct
+1.2.0 (5) is already published and must not be republished by this recovery.
+
 This file records release identities for the sandboxed Mac App Store product.
 Version 1.2.0 build 4 is reserved for the free TestFlight Beta; it is not the
 paid production upload. On 20 October 2026 the owner explicitly instructed a
